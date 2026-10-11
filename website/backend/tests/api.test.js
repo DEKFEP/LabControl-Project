@@ -550,7 +550,7 @@ test("IP anclada: el proxy de confianza fija la IP real y el resto no puede fals
 
 /* ===== Verificación en dos pasos (2FA) ===== */
 
-test("2FA: cualquier rol puede configurarlo y el flujo admin completo funciona", async () => {
+test("2FA: solo acceso técnico o admin puede configurarlo; el flujo admin completo funciona", async () => {
   const { codigoActual } = await import("../totp.mjs");
 
   // Estado inicial: desactivado.
@@ -559,12 +559,11 @@ test("2FA: cualquier rol puede configurarlo y el flujo admin completo funciona",
     .set("Authorization", `Bearer ${await login()}`);
   expect(estadoInicial.body.habilitado).toBe(false);
 
-  // Cualquier rol con sesión (también "otro_area") puede iniciar la configuración.
-  const otroRol = await request(app)
+  // Un rol con acceso básico (otro_area) no puede configurarlo: 403.
+  const basico = await request(app)
     .post("/api/2fa/setup")
     .set("Authorization", `Bearer ${await loginCamila()}`);
-  expect(otroRol.status).toBe(200);
-  expect(otroRol.body.qrDataUrl).toMatch(/^data:image\/png;base64,/);
+  expect(basico.status).toBe(403);
 
   // Setup: genera secreto, URI compatible y QR (data URL).
   const setup = await request(app)
@@ -822,7 +821,8 @@ test("registro: crea cuenta con rol otro_area, sin password y permite iniciar se
     .send({ id: "prof_prueba", nombre: "Prueba", apellido: "Registro", email: "prueba@liceo.cl", password: "Prueba12345", area: "Matemáticas", especialidad: "Cálculo" });
   expect(res.status).toBe(201);
   expect(res.body.rol).toBe("otro_area");
-  expect(res.body.nivelAcceso).toBe("basico");
+  // El nivel de acceso no se asigna solo: lo otorga el admin.
+  expect(res.body.nivelAcceso).toBeNull();
   expect(res.body.iniciales).toBe("PR");
   expect(res.body.password).toBeUndefined();
 
@@ -830,10 +830,11 @@ test("registro: crea cuenta con rol otro_area, sin password y permite iniciar se
   expect(loginNuevo.status).toBe(200);
   expect(loginNuevo.body.token).toBeTruthy();
 
-  // El admin recibe la notificación de la cuenta nueva.
+  // El admin recibe la notificación de la cuenta nueva, enlazada al usuario.
   const notifs = await request(app).get("/api/notificaciones").set("Authorization", `Bearer ${await login()}`);
   const notif = notifs.body.find((n) => n.tipo === "usuario_registrado" && /prof_prueba/.test(n.mensaje));
   expect(notif).toBeTruthy();
+  expect(notif.usuarioRef).toBe("prof_prueba");
 });
 
 test("registro: rechaza usuario o correo duplicado y datos inválidos", async () => {

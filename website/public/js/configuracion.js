@@ -16,6 +16,9 @@ const CONFIG_DEFAULT = {
 renderSidebar("configuracion.html");
 const esAdmin = AUTH.esAdmin();
 const sesion  = AUTH.getSesion();
+// La verificación en dos pasos solo se ofrece a cuentas con acceso técnico o de
+// administración; el resto de los roles no la ven.
+const puede2FA = AUTH.puedeVerTecnico();
 
 // Se llenan cuando responde la API; las funciones de abajo los usan al interactuar.
 let config = null;
@@ -119,7 +122,7 @@ function iniciarPantalla() {
   actualizarIconosLucide();
 
   /* Contenido dinámico de secciones nuevas */
-  refrescarEstado2FA();
+  if (puede2FA) refrescarEstado2FA();
   if (esAdmin) cargarAuditoriaPanel();
 }
 
@@ -292,13 +295,14 @@ function buildPanel(id) {
           <input class="form-input" id="s-pass-confirm" type="password" placeholder="Repite la nueva contraseña" style="max-width:280px" required minlength="10" />
         </div>
         <button class="btn btn--primary" id="btn-cambiar-contrasena" style="margin-top:4px">Cambiar contraseña</button>
+        ${puede2FA ? `
         <hr style="margin:24px 0;border-color:var(--color-border)">
         <div style="font-weight:600;margin-bottom:6px">Verificación en dos pasos</div>
         <p id="s-2fa-desc" style="color:var(--color-text-muted);font-size:.88rem">Cargando estado…</p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
           <button class="btn" id="btn-2fa-config"><i data-lucide="shield-plus"></i> Configurar 2FA</button>
           <button class="btn btn--danger" id="btn-2fa-desactivar" style="display:none"><i data-lucide="shield-off"></i> Desactivar 2FA</button>
-        </div>
+        </div>` : ""}
         <hr style="margin:24px 0;border-color:var(--color-border)">
         <div style="font-weight:600;margin-bottom:10px">Sesión activa</div>
         <p style="color:var(--color-text-muted);font-size:.88rem;margin-bottom:12px">Usuario: <strong>${sesion?.id}</strong> — Rol: ${rolLabel(sesion?.rol)}</p>

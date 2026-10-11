@@ -52,7 +52,7 @@ function activarModoDemo() {
 
 const copia = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
 
-function notificarDemo({ toggle, tipo, titulo, mensaje, actorId, destinatario, referencia = null, solicitudId = null }) {
+function notificarDemo({ toggle, tipo, titulo, mensaje, actorId, destinatario, referencia = null, solicitudId = null, usuarioRef = null }) {
   const D = window.DEMO;
   if (!D || !titulo || !destinatario) return;
   if (D.config?.notificaciones?.[toggle] === false) return;
@@ -68,6 +68,7 @@ function notificarDemo({ toggle, tipo, titulo, mensaje, actorId, destinatario, r
     mensaje: String(mensaje ?? "").replace(/\{quien\}/g, quien),
     reporteId: referencia,
     solicitudId,
+    usuarioRef,
     fecha: new Date().toISOString().slice(0, 10),
     leida: false
   });
@@ -497,7 +498,8 @@ function demoRequest(metodo, ruta, cuerpo) {
         rol: "otro_area",
         area: String(u.area ?? ""),
         especialidad: String(u.especialidad ?? ""),
-        nivelAcceso: "basico",
+        // Sin nivel de acceso: lo otorga el administrador desde la ficha del usuario.
+        nivelAcceso: null,
         activo: true
       };
       D.usuarios.push(nuevo);
@@ -505,8 +507,9 @@ function demoRequest(metodo, ruta, cuerpo) {
         toggle: "alertaNuevosUsuarios",
         tipo: "usuario_registrado",
         titulo: "Nuevo profesor registrado",
-        mensaje: `{quien} se registró en el sistema (${id}). Revisa sus datos: área "${u.area || "—"}", especialidad "${u.especialidad || "—"}".`,
-        actorId: id
+        mensaje: `{quien} se registró en el sistema (${id}). Abre la notificación para otorgarle el nivel de acceso.`,
+        actorId: id,
+        usuarioRef: id
       });
       const { password, ...publico } = nuevo;
       return copia(publico);
@@ -921,7 +924,8 @@ export const AUTH = {
     }
   },
 
-  // Registro autónomo: crea la cuenta con rol "otro_area" y nivel básico.
+  // Registro autónomo: crea la cuenta con rol "otro_area" y sin nivel de acceso
+  // (lo otorga el administrador desde la ficha del usuario).
   async registro(datos) {
     return apiSend("POST", "/registro", datos);
   },

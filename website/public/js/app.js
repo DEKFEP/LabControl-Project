@@ -364,6 +364,9 @@ function destinoNotificacion(n) {
   if ((n.tipo === "creado" || n.tipo === "editado") && n.reporteId) {
     return `reportes.html?id=${encodeURIComponent(n.reporteId)}`;
   }
+  if (n.tipo === "usuario_registrado" && n.usuarioRef) {
+    return `usuarios.html?id=${encodeURIComponent(n.usuarioRef)}`;
+  }
   if (["laboratorio", "reserva", "reserva_confirmada", "reserva_cancelada"].includes(n.tipo)) {
     return "disponibilidad.html";
   }
@@ -746,6 +749,7 @@ export function rolLabel(rol) {
 }
 
 export function nivelLabel(nivel) {
+  if (!nivel) return "Sin asignar";
   const labels = { total: "Acceso total", tecnico: "Acceso técnico", basico: "Acceso básico" };
   return labels[nivel] ?? nivel;
 }

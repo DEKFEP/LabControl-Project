@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS notificaciones (
   titulo       TEXT NOT NULL,
   mensaje      TEXT,
   reporte_id   TEXT,
+  usuario_ref  TEXT REFERENCES usuarios(id) ON DELETE SET NULL,
   fecha        TEXT,
   leida        INTEGER DEFAULT 0
 );
@@ -625,6 +626,25 @@ const MIGRACIONES = [
       d.exec("DROP TABLE IF EXISTS desafios_2fa");
     },
     nota: "Se pierden los desafíos de login en curso y las configuraciones 2FA a medias: quien estuviera activando la verificación tendrá que volver a empezar."
+  },
+  {
+    version: 12,
+    nombre: "referencia al usuario en las notificaciones (usuario_ref)",
+    migrar(d) {
+      // La notificación "Nuevo profesor registrado" apunta a la cuenta creada
+      // para que el admin pueda abrir su ficha y otorgarle el nivel de acceso.
+      const columnas = d.prepare("PRAGMA table_info(notificaciones)").all();
+      if (!columnas.some((c) => c.name === "usuario_ref")) {
+        d.exec("ALTER TABLE notificaciones ADD COLUMN usuario_ref TEXT REFERENCES usuarios(id) ON DELETE SET NULL");
+      }
+    },
+    revertir(d) {
+      const columnas = d.prepare("PRAGMA table_info(notificaciones)").all();
+      if (columnas.some((c) => c.name === "usuario_ref")) {
+        d.exec("ALTER TABLE notificaciones DROP COLUMN usuario_ref");
+      }
+    },
+    nota: "Se pierde el enlace directo desde las notificaciones a la ficha del usuario."
   }
 ];
 

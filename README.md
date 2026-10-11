@@ -26,14 +26,14 @@ sistema, no su historial.
 
 | Módulo | Qué permite |
 |---|---|
-| **Inicio de sesión** | Acceso con usuario y contraseña, renovación automática de sesión y registro de cuentas nuevas. |
+| **Inicio de sesión** | Acceso con usuario y contraseña, renovación automática de sesión y registro de cuentas nuevas (el administrador les otorga el nivel de acceso). |
 | **Panel** | Resumen del estado de los laboratorios, actividad reciente y distribución de equipos. |
 | **Laboratorios** | Ficha de cada laboratorio: estado, hardware, servicios disponibles y agenda de la semana. |
 | **Disponibilidad** | Cambio de estado (disponible, ocupado, mantención) y reserva de horarios, con detección de solapamientos. |
 | **Mapa** | Plano del establecimiento con los laboratorios marcados según su estado en vivo. |
 | **Equipos** | Inventario por laboratorio con número de serie, sistema operativo y estado. El control remoto está simulado. |
 | **Reportes** | Reportes de uso, disponibilidad, fallas e inventario, con adjuntos, edición, eliminación y exportación a CSV. |
-| **Usuarios** | Alta, edición y baja de profesores, área, especialidad y solicitudes de cambio de especialidad. |
+| **Usuarios** | Alta, edición y baja de profesores, área, especialidad, niveles de acceso (los otorga el administrador) y solicitudes de cambio de especialidad. |
 | **Configuración** | Perfil personal, apariencia del sitio, notificaciones, seguridad (2FA), auditoría, respaldos y configuración avanzada (solo administrador). |
 
 La web es una **PWA**: se puede instalar en el teléfono y guarda una copia de los archivos
@@ -56,10 +56,11 @@ estáticos para trabajar sin conexión.
 | Editar o eliminar reportes de otros | No | No | Sí |
 | Crear cuentas y editar las de otros | No | No | Sí |
 | Auditoría y respaldos | No | No | Sí |
-| Activar la verificación en dos pasos de la propia cuenta | Sí | Sí | Sí |
+| Activar la verificación en dos pasos de la propia cuenta | No | Sí | Sí |
+| Otorgar o cambiar el nivel de acceso de una cuenta | No | No | Sí |
 
 Editar el perfil propio está disponible para todos; cambiar el rol, el área, el estado de la
-cuenta o la contraseña de otra persona es solo del administrador.
+cuenta, el nivel de acceso o la contraseña de otra persona es solo del administrador.
 
 La información técnica se **redacta en el servidor**: una cuenta no técnica nunca la recibe,
 aunque la interfaz la pida.
@@ -189,8 +190,8 @@ y no se pueden guardar cambios.
 - **Sesiones** con JWT: token de acceso de 2 horas y token de refresco de 30 días con
   rotación; reutilizar un token ya usado se rechaza, y cerrar sesión o cambiar la contraseña
   revoca todos los tokens.
-- **Verificación en dos pasos (TOTP)** disponible para cualquier cuenta (se activa desde
-  Configuración → Seguridad), con clave QR y ventana de 5 minutos.
+- **Verificación en dos pasos (TOTP)** disponible para las cuentas con acceso técnico o de
+  administración (se activa desde Configuración → Seguridad), con clave QR y ventana de 5 minutos.
 - **Límites de peticiones** en el inicio de sesión, el registro, la recuperación y las rutas
   de escritura. El límite de sesión combina IP y usuario, así que dos profesores no se
   bloquean entre sí.

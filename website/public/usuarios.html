@@ -78,6 +78,17 @@
                 <span class="badge" id="det-rol-badge"></span>
                 <span class="badge badge--muted" id="det-nivel-badge"></span>
               </div>
+              <div id="det-nivel-control" style="display:none;margin-top:14px">
+                <label class="form-label" for="det-nivel-select">Nivel de acceso</label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                  <select class="form-input" id="det-nivel-select" style="width:200px;margin:0">
+                    <option value="basico">Acceso básico</option>
+                    <option value="tecnico">Acceso técnico</option>
+                    <option value="total">Acceso total</option>
+                  </select>
+                  <button class="btn btn--primary" id="btn-otorgar-nivel">Otorgar / cambiar nivel</button>
+                </div>
+              </div>
             </div>
             <div id="det-acciones-admin" style="display:none;gap:8px">
               <button class="btn" id="btn-editar-usr">Editar</button>
