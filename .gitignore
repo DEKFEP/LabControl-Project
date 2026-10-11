@@ -14,6 +14,11 @@ test-results/
 playwright-report/
 coverage/
 
+# Variables de entorno reales (nunca subir secretos; .env.example sí se versiona)
+.env
+.env.*
+!.env.example
+
 # Estado local de Cloudflare Pages / Wrangler
 .wrangler/
 
