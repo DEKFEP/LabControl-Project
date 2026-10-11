@@ -1,5 +1,15 @@
 import { test, expect } from "@playwright/test";
 
+// Credenciales de prueba: se leen del entorno para no dejarlas fijas en el
+// código. El valor por defecto son las cuentas demo documentadas, de modo que
+// la suite siga corriendo en local sin configurar nada; en CI se pueden
+// sobrescribir con LC_E2E_* (secrets/vars del repositorio).
+const CRED = {
+  admin:  { user: process.env.LC_E2E_ADMIN_USER  || "INSUCO",      pass: process.env.LC_E2E_ADMIN_PASS  || "Insuco1336" },
+  camila: { user: process.env.LC_E2E_CAMILA_USER || "prof_camila", pass: process.env.LC_E2E_CAMILA_PASS || "camila123" },
+  juan:   { user: process.env.LC_E2E_JUAN_USER   || "prof_juan",   pass: process.env.LC_E2E_JUAN_PASS   || "juan123" }
+};
+
 async function login(page, user, pass) {
   await page.goto("/login.html");
   await page.fill("#input-user", user);
@@ -8,8 +18,8 @@ async function login(page, user, pass) {
   await page.waitForURL("**/index.html");
 }
 
-test("login como INSUCO y el dashboard carga los datos", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+test("login como administrador y el dashboard carga los datos", async ({ page }) => {
+  await login(page, CRED.admin.user, CRED.admin.pass);
 
   await expect(page.locator("#saludo-titulo")).toContainText("Administrador", { timeout: 8000 });
   await expect(page.locator("#stat-cards .stat-card")).toHaveCount(5, { timeout: 8000 });
@@ -17,7 +27,7 @@ test("login como INSUCO y el dashboard carga los datos", async ({ page }) => {
 });
 
 test("configuracion.html muestra la versión vigente", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
 
   await page.goto("/configuracion.html");
 
@@ -53,8 +63,8 @@ test("registro de cuenta propia: crea la cuenta, inicia sesión y llega al dashb
   await page.fill("#reg-email", `estela${sufijo}@liceo.cl`);
   await page.fill("#reg-area", "Historia");
   await page.fill("#reg-especialidad", "Historia de Chile");
-  await page.fill("#reg-pass", "estela123");
-  await page.fill("#reg-pass2", "estela123");
+  await page.fill("#reg-pass", "Estela12345");
+  await page.fill("#reg-pass2", "Estela12345");
   await page.check("#reg-terminos");
   await page.click("#vista-registrar button[type=submit]");
   await page.waitForURL("**/index.html");
@@ -81,7 +91,7 @@ test("el modal de términos abre desde el registro y cierra con la X", async ({ 
 });
 
 test("prof_camila ve los datos técnicos restringidos en Equipos", async ({ page }) => {
-  await login(page, "prof_camila", "camila123");
+  await login(page, CRED.camila.user, CRED.camila.pass);
 
   await page.goto("/equipos.html");
   await expect(page.locator("#aviso-sin-permiso")).toBeVisible();
@@ -89,7 +99,7 @@ test("prof_camila ve los datos técnicos restringidos en Equipos", async ({ page
 });
 
 test("admin abre el control remoto de un equipo", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
 
   await page.goto("/equipos.html");
   const btn = page.locator("[data-control]").first();
@@ -102,7 +112,7 @@ test("admin abre el control remoto de un equipo", async ({ page }) => {
 });
 
 test("prof_camila edita su propio perfil y guarda", async ({ page }) => {
-  await login(page, "prof_camila", "camila123");
+  await login(page, CRED.camila.user, CRED.camila.pass);
 
   await page.goto("/configuracion.html");
   await page.fill("#p-nombre", "Camila Editada");
@@ -111,7 +121,7 @@ test("prof_camila edita su propio perfil y guarda", async ({ page }) => {
 });
 
 test("solicitud de especialidad: prof_juan la pide y el admin la aprueba", async ({ page }) => {
-  await login(page, "prof_juan", "juan123");
+  await login(page, CRED.juan.user, CRED.juan.pass);
   await page.goto("/configuracion.html");
 
   // Los no-admins ya no pueden modificar su área/departamento
@@ -124,7 +134,7 @@ test("solicitud de especialidad: prof_juan la pide y el admin la aprueba", async
   // El admin abre la notificación y aprueba la solicitud
   await page.evaluate(() => localStorage.removeItem("lc_sesion"));
   await page.context().clearCookies();
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.click(".notif-btn");
   const item = page.locator(".notif-item").filter({ hasText: "Solicitud de cambio de especialidad" }).first();
   await expect(item).toBeVisible({ timeout: 8000 });
@@ -139,7 +149,7 @@ test("solicitud de especialidad: prof_juan la pide y el admin la aprueba", async
 });
 
 test("admin edita un usuario existente desde su detalle", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/usuarios.html");
 
   await page.locator(".usr-card").filter({ hasText: "prof" }).first().click();
@@ -158,9 +168,14 @@ test("cabeceras de seguridad: CSP estricto, sin caché en API y dotfiles negados
   const csp = html.headers()["content-security-policy"] || "";
   const scriptSrc = (csp.match(/(?:^|;)\s*script-src\s+([^;]+)/) || [])[1] || "";
   const scriptSrcAttr = (csp.match(/(?:^|;)\s*script-src-attr\s+([^;]+)/) || [])[1] || "";
+  const styleSrc = (csp.match(/(?:^|;)\s*style-src\s+([^;]+)/) || [])[1] || "";
   expect(scriptSrc).toContain("'self'");
   expect(scriptSrc).not.toContain("'unsafe-inline'");
   expect(scriptSrcAttr).toBe("'none'");
+  // style-src (y style-src-elem) no admiten estilos en línea; solo los atributos
+  // style="" siguen permitidos mediante style-src-attr.
+  expect(styleSrc).not.toContain("'unsafe-inline'");
+  expect(csp).toContain("style-src-attr 'unsafe-inline'");
   expect(html.headers()["x-content-type-options"]).toBe("nosniff");
   expect(html.headers()["referrer-policy"]).toBe("same-origin");
 
@@ -183,7 +198,7 @@ test("CSP estricto bloquea la ejecución de scripts inline", async ({ page }) =>
 });
 
 test("sesión de larga duración: el access token expirado se renueva solo", async ({ page, context }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await expect(page.locator("#stat-cards .stat-card")).toHaveCount(5, { timeout: 8000 });
 
   // La sesión vive en cookies HttpOnly; nunca en localStorage.
@@ -210,7 +225,7 @@ test("modo offline: el SW sirve el shell y los assets desde caché y degrada a d
   const errores = [];
   page.on("pageerror", (e) => errores.push(e.message));
 
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();
   await expect(page.locator(".sidebar")).toBeVisible();
@@ -282,7 +297,7 @@ test("accesibilidad: el enlace 'saltar al contenido' mueve el foco a main", asyn
 });
 
 test("accesibilidad: foco atrapado en el modal y restaurado al cerrar", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/usuarios.html");
   const btn = page.locator("#btn-nuevo-usuario");
   await expect(btn).toBeVisible();
@@ -303,7 +318,7 @@ test("accesibilidad: foco atrapado en el modal y restaurado al cerrar", async ({
 });
 
 test("accesibilidad: interruptores (switch) operables con teclado", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/configuracion.html");
   await page.click('#cfg-sidenav button[data-section="notificaciones"]');
   const tog = page.locator('.toggle[role="switch"]').first();
@@ -316,7 +331,7 @@ test("accesibilidad: interruptores (switch) operables con teclado", async ({ pag
 });
 
 test("auditoría: el admin ve los registros de actividad y filtra", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/configuracion.html");
   await page.click('#cfg-sidenav button[data-section="auditoria"]');
 
@@ -332,7 +347,7 @@ test("auditoría: el admin ve los registros de actividad y filtra", async ({ pag
 });
 
 test("calendario semanal: navegación entre semanas y columna de hoy", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/disponibilidad.html");
 
   await expect(page.locator("#semana-wrap .semana-tabla")).toContainText("Laboratorio", { timeout: 8000 });
@@ -346,7 +361,7 @@ test("calendario semanal: navegación entre semanas y columna de hoy", async ({ 
 });
 
 test("respaldos: el admin descarga un archivo .db", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/configuracion.html");
   await page.click('#cfg-sidenav button[data-section="backups"]');
 
@@ -357,7 +372,7 @@ test("respaldos: el admin descarga un archivo .db", async ({ page }) => {
 });
 
 test("reportes: exportar el reporte a CSV", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/reportes.html");
 
   const tarjeta = page.locator(".rep-card").first();
@@ -371,7 +386,7 @@ test("reportes: exportar el reporte a CSV", async ({ page }) => {
 });
 
 test("2FA: el admin activa, verifica y desactiva en Configuración", async ({ page }) => {
-  await login(page, "INSUCO", "Insuco1336");
+  await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/configuracion.html");
   await page.click('#cfg-sidenav button[data-section="seguridad"]');
 
@@ -438,7 +453,7 @@ test.describe("celular: el usuario y las notificaciones viven dentro del menú",
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("la barra superior queda solo con el botón de menú", async ({ page }) => {
-    await login(page, "INSUCO", "Insuco1336");
+    await login(page, CRED.admin.user, CRED.admin.pass);
 
     // Con el menú plegado, ni el usuario ni la campana ocupan la barra superior.
     await expect(page.locator(".sidebar__toggle")).toBeVisible();
@@ -451,7 +466,7 @@ test.describe("celular: el usuario y las notificaciones viven dentro del menú",
   });
 
   test("el menú muestra foto, nombre, correo y la campana a un lado", async ({ page }) => {
-    await login(page, "INSUCO", "Insuco1336");
+    await login(page, CRED.admin.user, CRED.admin.pass);
 
     await page.click(".sidebar__toggle");
 
@@ -477,7 +492,7 @@ test.describe("celular: el usuario y las notificaciones viven dentro del menú",
   });
 
   test("las notificaciones se abren dentro del menú y se cierran al plegarlo", async ({ page }) => {
-    await login(page, "INSUCO", "Insuco1336");
+    await login(page, CRED.admin.user, CRED.admin.pass);
 
     await page.click(".sidebar__toggle");
     const panel = page.locator(".sidebar__me .notif-panel");
@@ -494,7 +509,7 @@ test.describe("celular: el usuario y las notificaciones viven dentro del menú",
   });
 
   test("al volver a escritorio el usuario y la campana salen del menú", async ({ page }) => {
-    await login(page, "INSUCO", "Insuco1336");
+    await login(page, CRED.admin.user, CRED.admin.pass);
 
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(page.locator(".sidebar__me")).toBeHidden();

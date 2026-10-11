@@ -132,20 +132,23 @@ Se revisaron y se dejan como están, con su motivo:
     establecimiento; así consta en los términos de uso y en la política de privacidad.
 
 
-6. DESPLIEGUE DE LA VERSIÓN 4.1 (acciones en la infraestructura)
+6. DESPLIEGUE DE LA VERSIÓN 4.2 (acciones en la infraestructura)
 ----------------------------------------------------------------
 La web se publica sola, pero la API y las variables dependen del panel. Para cerrar el
-despliegue de 4.1:
+despliegue de 4.2:
 
   1. Activar en Railway el despliegue automático de la rama master (hoy está apagado),
-     para que la API tome el commit de 4.1. Si no, GET /api/salud sigue devolviendo la
+     para que la API tome el commit de 4.2. Si no, GET /api/salud sigue devolviendo la
      versión anterior y el chequeo de versión del workflow falla.
   2. Definir el mismo LC_PROXY_SECRET en el servicio de Railway y en el proyecto de
      Cloudflare Pages.
-  3. Definir LC_PUBLIC_URL con la URL https del sitio en Railway (habilita las cookies
+  3. Definir LC_SALUD_TOKEN con el mismo valor en el servicio de Railway (que ya no revela
+     la versión a cualquiera) y como secreto del repositorio (gh secret set LC_SALUD_TOKEN),
+     que es el que usa el chequeo de versión del workflow.
+  4. Definir LC_PUBLIC_URL con la URL https del sitio en Railway (habilita las cookies
      Secure y el enlace de recuperación de contraseña).
-  4. Definir API_ORIGIN en el proyecto de Pages apuntando a la API de Railway.
-  5. Rotar la contraseña del administrador INSUCO: sus credenciales de ejemplo estuvieron
+  5. Definir API_ORIGIN en el proyecto de Pages apuntando a la API de Railway.
+  6. Rotar la contraseña del administrador INSUCO: sus credenciales de ejemplo estuvieron
      en el código hasta 4.1.
 
 Referencia de todas las variables: website/backend/.env.example.

@@ -1,5 +1,5 @@
 /* Imports (ES modules) */
-import { AUTH, ESTADOS, actualizarConfig, actualizarUsuario, apiSend, cargarAuditoria, cargarConfig, cargarEquipos, cargarEstado2FA, cargarLaboratorios, cargarSolicitudEspecialidad, cargarSolicitudesEspecialidad, cargarUsuarios, desactivar2FA, exportarBackup, iniciarConfiguracion2FA, resolverSolicitudEspecialidad, restaurarBackup, solicitarCambioEspecialidad, verificarConfiguracion2FA } from "./data.js";
+import { AUTH, ESTADOS, actualizarConfig, actualizarUsuario, apiSend, cargarAuditoria, cargarConfig, cargarEquipos, cargarEstado2FA, cargarLaboratorios, cargarSolicitudEspecialidad, cargarSolicitudesEspecialidad, cargarUsuarios, desactivar2FA, errorPassword, exportarBackup, iniciarConfiguracion2FA, resolverSolicitudEspecialidad, restaurarBackup, solicitarCambioEspecialidad, verificarConfiguracion2FA } from "./data.js";
 import { abrirModal, activarNotificacionesSistema, actualizarIconosLucide, esc, renderSidebar, rolLabel, showToast } from "./app.js";
 
 /* Valores por defecto de configuración (espejo del backend, db.js). */
@@ -15,6 +15,7 @@ const CONFIG_DEFAULT = {
 /* configuracion.js — lógica de la página Configuración. */
 renderSidebar("configuracion.html");
 const esAdmin = AUTH.esAdmin();
+const esTecnico = AUTH.puedeVerTecnico();
 const sesion  = AUTH.getSesion();
 
 // Se llenan cuando responde la API; las funciones de abajo los usan al interactuar.
@@ -285,11 +286,11 @@ function buildPanel(id) {
         </div>
         <div class="form-group">
           <label class="form-label">Nueva contraseña</label>
-          <input class="form-input" id="s-pass-nueva" type="password" placeholder="Mínimo 8 caracteres" style="max-width:280px" required minlength="8" />
+          <input class="form-input" id="s-pass-nueva" type="password" placeholder="Mínimo 10, con mayúscula y número" style="max-width:280px" required minlength="10" />
         </div>
         <div class="form-group">
           <label class="form-label">Confirmar contraseña</label>
-          <input class="form-input" id="s-pass-confirm" type="password" placeholder="Repite la nueva contraseña" style="max-width:280px" required minlength="8" />
+          <input class="form-input" id="s-pass-confirm" type="password" placeholder="Repite la nueva contraseña" style="max-width:280px" required minlength="10" />
         </div>
         <button class="btn btn--primary" id="btn-cambiar-contrasena" style="margin-top:4px">Cambiar contraseña</button>
         <hr style="margin:24px 0;border-color:var(--color-border)">
@@ -505,7 +506,7 @@ function buildPanel(id) {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
           <div class="cfg-sys-card">
             <div class="cfg-sys-card__label">Versión del sistema</div>
-            <div class="cfg-sys-card__value">LabControl v4.1.0</div>
+            <div class="cfg-sys-card__value">LabControl v4.2.0</div>
           </div>
           <div class="cfg-sys-card">
             <div class="cfg-sys-card__label">Total laboratorios</div>
@@ -609,7 +610,7 @@ async function cambiarContrasena() {
   const confirma = document.getElementById("s-pass-confirm").value;
   if (!actual || !nueva) { showToast("Completa todos los campos.", "error"); return; }
   if (nueva !== confirma) { showToast("Las contraseñas no coinciden.", "error"); return; }
-  if (nueva.length < 8)   { showToast("La contraseña debe tener al menos 8 caracteres.", "error"); return; }
+  if (errorPassword(nueva)) { showToast(errorPassword(nueva), "error"); return; }
   try {
     await apiSend("POST", "/change-password", { currentPassword: actual, newPassword: nueva });
     showToast("Contraseña actualizada correctamente.");
@@ -955,7 +956,7 @@ function contenidoAcerca() {
       <div style="font-size:.85rem;color:var(--color-text-muted)">Sistema de control y supervisión de los laboratorios de computación del liceo.</div>
       <div class="cfg-sys-card" style="margin:18px auto 0;max-width:260px">
         <div class="cfg-sys-card__label">Versión del sistema</div>
-        <div class="cfg-sys-card__value">LabControl v4.1.0</div>
+        <div class="cfg-sys-card__value">LabControl v4.2.0</div>
       </div>
       <div class="cfg-sys-card" style="margin:10px auto 0;max-width:260px">
         <div class="cfg-sys-card__label">Institución</div>
@@ -1099,10 +1100,10 @@ async function refrescarEstado2FA() {
       if (btnConfig) btnConfig.style.display = "none";
       if (btnDesac) btnDesac.style.display = "";
     } else {
-      desc.textContent = esAdmin
+      desc.textContent = esTecnico
         ? "Inactiva. Protégete con un código desde tu aplicación de autenticación (Google Authenticator, Aegis, etc.)."
-        : "Solo el administrador puede activar la verificación en dos pasos.";
-      if (btnConfig) btnConfig.style.display = esAdmin ? "" : "none";
+        : "Solo administradores y técnicos pueden activar la verificación en dos pasos.";
+      if (btnConfig) btnConfig.style.display = esTecnico ? "" : "none";
       if (btnDesac) btnDesac.style.display = "none";
     }
   } catch {

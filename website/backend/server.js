@@ -42,9 +42,49 @@ const JWT_SECRET = cargarJwtSecret();
 const JWT_REFRESH_EXPIRES = "30d";
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // Política de contraseñas: longitud mínima única para todos los caminos que
-// fijan una contraseña (registro, alta de usuario, perfil, cambio y reseteo).
-const MIN_PASSWORD = 8;
+// fijan una contraseña (registro, alta de usuario, perfil, cambio y reseteo),
+// más variedad mínima (minúscula, mayúscula y número) y una lista de
+// contraseñas comunes. La variedad no exige símbolos para no invalidar la
+// cuenta administradora documentada; la longitud sí se sube a 10.
+const MIN_PASSWORD = 10;
 const MAX_PASSWORD = 200;
+// Contraseñas comunes/prohibidas; se comparan en minúsculas.
+const PASSWORDS_PROHIBIDAS = new Set([
+  "1234567890", "123456789", "contrasena", "contraseña", "password", "password1",
+  "password123", "password1234", "qwertyuiop", "qwerty12345", "labcontrol",
+  "labcontrol1", "labcontrol123", "liceo12345", "administrador", "administrador1",
+  "insuco1336", "insuco12345"
+]);
+
+// Devuelve el mensaje de error si la contraseña no cumple la política, o null.
+function errorPassword(pw) {
+  if (typeof pw !== "string" || pw.length === 0) return "La contraseña es obligatoria";
+  if (pw.length < MIN_PASSWORD || pw.length > MAX_PASSWORD) {
+    return `La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`;
+  }
+  if (!/[a-z]/.test(pw)) return "La contraseña debe incluir al menos una letra minúscula";
+  if (!/[A-Z]/.test(pw)) return "La contraseña debe incluir al menos una letra mayúscula";
+  if (!/[0-9]/.test(pw)) return "La contraseña debe incluir al menos un número";
+  if (PASSWORDS_PROHIBIDAS.has(pw.toLowerCase())) return "Esa contraseña es demasiado común; elige otra";
+  return null;
+}
+
+// Encadena la política a express-validator para un campo obligatorio.
+function reglaPassword(campo) {
+  return body(campo)
+    .isLength({ min: MIN_PASSWORD, max: MAX_PASSWORD })
+    .withMessage(`La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`)
+    .bail()
+    .custom((pw) => {
+      const e = errorPassword(pw);
+      if (e) throw new Error(e);
+      return true;
+    });
+}
+
+// Token opcional: si LC_SALUD_TOKEN está definido, /api/salud revela la versión
+// y el nombre del servicio solo a quien lo presente en `x-lc-salud-token`.
+const SALUD_TOKEN = process.env.LC_SALUD_TOKEN || "";
 if (!process.env.JWT_SECRET) {
   console.log("  INFO: JWT_SECRET no definido; se usa (o se crea) una clave persistente en la carpeta de datos.");
   console.log("  INFO: Las sesiones sobreviven a los reinicios; en producción define JWT_SECRET como variable de entorno.");
@@ -95,7 +135,15 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       scriptSrcAttr: ["'none'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      // Los estilos se separan (CSP3): `style-src-elem` cubre las hojas y los
+      // <style> (no hay ninguno en línea) y se deja SIN `unsafe-inline`, de modo
+      // que inyectar una hoja o un <style> queda bloqueado. `style-src-attr`
+      // mantiene `unsafe-inline` porque la interfaz usa atributos style="" (los
+      // generados dinámicamente no se pueden clasificar). `style-src` es el
+      // respaldo para navegadores antiguos.
+      styleSrc: ["'self'", "https://fonts.googleapis.com"],
+      styleSrcElem: ["'self'", "https://fonts.googleapis.com"],
+      styleSrcAttr: ["'unsafe-inline'"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:"],
       connectSrc: ["'self'"],
@@ -278,6 +326,16 @@ function authenticateToken(req, res, next) {
 function requireAdmin(req, res, next) {
   if (req.user?.rol !== "admin") {
     return res.status(403).json({ error: "Se requieren permisos de administrador" });
+  }
+  next();
+}
+
+// Admin o técnico (programación). Se usa en la verificación en dos pasos: es
+// una protección de la propia cuenta y debe poder activarla cualquier usuario
+// con acceso a datos técnicos, no solo el administrador.
+function requireTecnico(req, res, next) {
+  if (!esTecnico(req.user?.rol)) {
+    return res.status(403).json({ error: "Se requieren permisos de administrador o técnico" });
   }
   next();
 }
@@ -1019,7 +1077,11 @@ app.post("/api/login/2fa", loginLimiter, (req, res) => {
 
 // Comprobación de vida del servicio, sin token y sin tocar la base: la usan el
 // hosting del backend (health check) y quien despliegue el proyecto para ver si
-// la API está respondiendo. No revela nada del sistema.
+// la API está respondiendo. Públicamente solo dice `{ ok: true }` para no
+// revelar la versión ni el nombre del servicio (fingerprinting). El detalle
+// (servicio y versión) solo se devuelve si la petición trae el encabezado
+// `x-lc-salud-token` con el valor de LC_SALUD_TOKEN (comparación en tiempo
+// constante); el flujo de despliegue pasa ese encabezado.
 //
 // Ojo: este número es la versión de la API, no la de la web. La web va por
 // delante casi siempre; esto solo sube cuando cambia el comportamiento de la
@@ -1029,7 +1091,10 @@ app.post("/api/login/2fa", loginLimiter, (req, res) => {
 // compara este número contra el que declara el último commit que tocó
 // `website/backend`, que es el que manda.
 app.get("/api/salud", (req, res) => {
-  res.json({ ok: true, servicio: "labcontrol-api", version: "4.1" });
+  const detallado = SALUD_TOKEN && igualSeguro(String(req.headers["x-lc-salud-token"] || ""), SALUD_TOKEN);
+  res.json(detallado
+    ? { ok: true, servicio: "labcontrol-api", version: "4.2" }
+    : { ok: true });
 });
 
 // Estado del 2FA de la sesión actual.
@@ -1039,7 +1104,7 @@ app.get("/api/2fa/estado", authenticateToken, (req, res) => {
 });
 
 // Inicia la configuración: genera un secreto nuevo (no se activa hasta verificar).
-app.post("/api/2fa/setup", authenticateToken, requireAdmin, async (req, res) => {
+app.post("/api/2fa/setup", authenticateToken, requireTecnico, async (req, res) => {
   const fila = db.prepare("SELECT totp_habilitado FROM usuarios WHERE id = ?").get(req.user.id);
   if (fila?.totp_habilitado === 1) {
     return res.status(409).json({ error: "La verificación en dos pasos ya está activada" });
@@ -1060,7 +1125,7 @@ app.post("/api/2fa/setup", authenticateToken, requireAdmin, async (req, res) => 
 });
 
 // Activa el 2FA tras verificar el código generado con el secreto pendiente.
-app.post("/api/2fa/verificar", authenticateToken, requireAdmin, sensiblesLimiter, (req, res) => {
+app.post("/api/2fa/verificar", authenticateToken, requireTecnico, sensiblesLimiter, (req, res) => {
   const { codigo } = req.body || {};
   if (!codigo) return res.status(400).json({ error: "Falta el código de verificación" });
 
@@ -1081,7 +1146,7 @@ app.post("/api/2fa/verificar", authenticateToken, requireAdmin, sensiblesLimiter
 });
 
 // Desactiva el 2FA (exige el código actual para confirmar).
-app.post("/api/2fa/desactivar", authenticateToken, requireAdmin, sensiblesLimiter, (req, res) => {
+app.post("/api/2fa/desactivar", authenticateToken, requireTecnico, sensiblesLimiter, (req, res) => {
   const { codigo } = req.body || {};
   const fila = db.prepare("SELECT totp_secreto, totp_habilitado FROM usuarios WHERE id = ?").get(req.user.id);
   if (!fila || fila.totp_habilitado !== 1) {
@@ -1152,9 +1217,9 @@ app.get("/api/auditoria", authenticateToken, requireAdmin, (req, res) => {
 
 /* Respaldo de la base de datos (solo administrador) */
 
-// Descargar: primero se vacía el WAL al archivo principal y se envía ese archivo.
+// Descargar: se envía el archivo de la base. Con journal DELETE (sin WAL) cada
+// transacción ya quedó volcada al archivo principal, así que es consistente.
 app.get("/api/backups/exportar", authenticateToken, requireAdmin, (req, res) => {
-  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   const nombre = `labcontrol-backup-${new Date().toISOString().slice(0, 10)}-${Date.now()}.db`;
   registrarAuditoria(req, "backup_descargado");
   res.setHeader("Content-Type", "application/octet-stream");
@@ -1279,8 +1344,9 @@ app.post("/api/change-password", authenticateToken, sensiblesLimiter, async (req
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: "Faltan campos obligatorios" });
   }
-  if (newPassword.length < MIN_PASSWORD) {
-    return res.status(400).json({ error: `La nueva contraseña debe tener al menos ${MIN_PASSWORD} caracteres` });
+  const errPassword = errorPassword(newPassword);
+  if (errPassword) {
+    return res.status(400).json({ error: errPassword });
   }
 
   const row = db.prepare("SELECT * FROM usuarios WHERE id = ?").get(req.user.id);
@@ -1382,7 +1448,7 @@ app.post("/api/recuperar-contrasena", (req, res) => {
 
 // Completar restablecimiento con el token del enlace recibido por correo.
 app.post("/api/recuperar-contrasena/:token", [
-  body("newPassword").isLength({ min: MIN_PASSWORD, max: MAX_PASSWORD }).withMessage(`La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`)
+  reglaPassword("newPassword")
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -1411,7 +1477,7 @@ app.post("/api/registro", [
   body("nombre").trim().notEmpty().withMessage("El nombre es obligatorio"),
   body("apellido").trim().notEmpty().withMessage("El apellido es obligatorio"),
   body("email").isEmail().withMessage("El correo debe ser válido"),
-  body("password").isLength({ min: MIN_PASSWORD, max: MAX_PASSWORD }).withMessage(`La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`),
+  reglaPassword("password"),
   body("area").optional({ values: "falsy" }).trim().isLength({ max: 100 }).withMessage("El área no puede superar 100 caracteres"),
   body("especialidad").optional({ values: "falsy" }).trim().isLength({ max: 200 }).withMessage("La especialidad no puede superar 200 caracteres")
 ], async (req, res) => {
@@ -1539,7 +1605,7 @@ app.post("/api/usuarios", authenticateToken, requireAdmin, [
   body("nombre").trim().notEmpty().withMessage("El nombre es obligatorio"),
   body("apellido").trim().notEmpty().withMessage("El apellido es obligatorio"),
   body("email").isEmail().withMessage("El email debe ser válido"),
-  body("password").isLength({ min: MIN_PASSWORD, max: MAX_PASSWORD }).withMessage(`La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`),
+  reglaPassword("password"),
   body("rol").optional().isIn(["admin", "programacion", "otro_area"]).withMessage("Rol inválido"),
   body("nivelAcceso").optional().isIn(["total", "tecnico", "basico"]).withMessage("Nivel de acceso inválido")
 ], async (req, res) => {
@@ -1587,7 +1653,8 @@ app.patch("/api/usuarios/:id", authenticateToken, [
   body("nombre").optional().trim().notEmpty(),
   body("apellido").optional().trim().notEmpty(),
   body("email").optional().isEmail().withMessage("El email debe ser válido"),
-  body("password").optional().isLength({ min: MIN_PASSWORD, max: MAX_PASSWORD }).withMessage(`La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`),
+  body("password").optional().isLength({ min: MIN_PASSWORD, max: MAX_PASSWORD }).withMessage(`La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`).bail()
+    .custom((pw) => { const e = errorPassword(pw); if (e) throw new Error(e); return true; }),
   body("rol").optional().isIn(["admin", "programacion", "otro_area"]).withMessage("Rol inválido"),
   body("nivelAcceso").optional().isIn(["total", "tecnico", "basico"]).withMessage("Nivel de acceso inválido")
 ], async (req, res) => {
@@ -2079,7 +2146,7 @@ app.use((err, req, res, next) => {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const servidor = app.listen(PORT, () => {
-    console.log(`\n  LabControl Liceo v4.1`);
+    console.log(`\n  LabControl Liceo v4.2`);
     if (sitioDentro) {
       console.log(`  API + sitio corriendo en: http://localhost:${PORT}/login.html`);
     } else {

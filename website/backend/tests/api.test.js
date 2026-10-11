@@ -21,6 +21,9 @@ beforeAll(async () => {
   // Secreto compartido con el proxy de Cloudflare Pages: permite anclar la IP
   // real del cliente (x-lc-client-ip) en el rate limiting y la auditoría.
   process.env.LC_PROXY_SECRET = "secreto-de-prueba";
+  // Token para que /api/salud devuelva el detalle (servicio/version). Sin el,
+  // solo responde `{ ok: true }`.
+  process.env.LC_SALUD_TOKEN = "salud-de-prueba";
   app = (await import("../server.js")).app;
 });
 
@@ -59,6 +62,16 @@ async function loginCamila() {
   return tokenCamila;
 }
 
+let tokenJuan = null;
+async function loginJuan() {
+  if (!tokenJuan) {
+    const res = await request(app).post("/api/login").send({ usuario: "prof_juan", password: "juan123" });
+    expect(res.status).toBe(200);
+    tokenJuan = res.body.token;
+  }
+  return tokenJuan;
+}
+
 async function loginFresh() {
   const res = await request(app).post("/api/login").send({ usuario: "INSUCO", password: "Insuco1336" });
   return res.body.token;
@@ -75,6 +88,24 @@ async function sesionNuevaCamila() {
   const res = await request(app).post("/api/login").send({ usuario: "prof_camila", password: "camila123" });
   expect(res.status).toBe(200);
   return res.body;
+}
+
+// Las claves demo (p. ej. "camila123") no cumplen la política de contraseñas
+// vigente, así que no se pueden reponer por la API. Estos ayudantes permiten
+// guardar el hash original y restaurarlo directamente en la BD.
+async function hashDeUsuario(usuarioId) {
+  const { abrirConexion } = await import(`../db.js?v=${Date.now()}`);
+  const cone = await abrirConexion();
+  const fila = cone.prepare("SELECT password FROM usuarios WHERE id = ?").get(usuarioId);
+  cone.close();
+  return fila.password;
+}
+
+async function restaurarPassword(usuarioId, hash) {
+  const { abrirConexion } = await import(`../db.js?v=${Date.now()}`);
+  const cone = await abrirConexion();
+  cone.prepare("UPDATE usuarios SET password = ? WHERE id = ?").run(hash, usuarioId);
+  cone.close();
 }
 
 test("autenticación: rechaza credenciales incorrectas (401)", async () => {
@@ -94,7 +125,15 @@ test("salud: /api/salud responde sin token y no expone nada del sistema", async 
   const res = await request(app).get("/api/salud");
   expect(res.status).toBe(200);
   expect(res.body.ok).toBe(true);
-  expect(Object.keys(res.body).sort()).toEqual(["ok", "servicio", "version"]);
+  expect(Object.keys(res.body)).toEqual(["ok"]);
+});
+
+test("salud: /api/salud revela el detalle solo con el token correcto", async () => {
+  const conToken = await request(app).get("/api/salud").set("x-lc-salud-token", "salud-de-prueba");
+  expect(Object.keys(conToken.body).sort()).toEqual(["ok", "servicio", "version"]);
+
+  const tokenMalo = await request(app).get("/api/salud").set("x-lc-salud-token", "incorrecto");
+  expect(Object.keys(tokenMalo.body)).toEqual(["ok"]);
 });
 
 test("seguridad: /api/usuarios exige token (401)", async () => {
@@ -142,20 +181,19 @@ test("refresh tokens: logout revoca el token de refresco", async () => {
 });
 
 test("refresh tokens: cambiar la contraseña revoca las sesiones de larga duración", async () => {
+  const hashOriginal = await hashDeUsuario("prof_camila");
   const sesion = await sesionNuevaCamila();
   const cambio = await request(app).post("/api/change-password")
     .set("Authorization", `Bearer ${sesion.token}`)
-    .send({ currentPassword: "camila123", newPassword: "camila456" });
+    .send({ currentPassword: "camila123", newPassword: "Camila4567" });
   expect(cambio.status).toBe(200);
 
   const res = await request(app).post("/api/refresh").send({ refreshToken: sesion.refreshToken });
   expect(res.status).toBe(401);
 
-  // Se restaura la contraseña original para no afectar al resto de la suite.
-  const restaura = await request(app).post("/api/change-password")
-    .set("Authorization", `Bearer ${sesion.token}`)
-    .send({ currentPassword: "camila456", newPassword: "camila123" });
-  expect(restaura.status).toBe(200);
+  // Se restaura la contraseña original directamente en la BD: la política ya no
+  // acepta "camila123" (clave demo) y no se puede reponer por la API.
+  await restaurarPassword("prof_camila", hashOriginal);
 });
 
 test("refresh tokens: token inválido o ausente se rechaza", async () => {
@@ -556,6 +594,14 @@ test("2FA: no-admin no puede configurarlo y el flujo admin completo funciona", a
   expect(estadoActivo.body.habilitado).toBe(true);
 });
 
+test("2FA: un técnico (programación) también puede configurarlo", async () => {
+  const setup = await request(app)
+    .post("/api/2fa/setup")
+    .set("Authorization", `Bearer ${await loginJuan()}`);
+  expect(setup.status).toBe(200);
+  expect(setup.body.qrDataUrl).toMatch(/^data:image\/png;base64,/);
+});
+
 test("2FA: al estar activo, el login pide el código y solo se autentica con él", async () => {
   const { codigoActual } = await import("../totp.mjs");
 
@@ -772,14 +818,14 @@ test("backups: restaurar un respaldo válido deja la API operativa y sin tempora
 test("registro: crea cuenta con rol otro_area, sin password y permite iniciar sesión", async () => {
   const res = await request(app)
     .post("/api/registro")
-    .send({ id: "prof_prueba", nombre: "Prueba", apellido: "Registro", email: "prueba@liceo.cl", password: "prueba123", area: "Matemáticas", especialidad: "Cálculo" });
+    .send({ id: "prof_prueba", nombre: "Prueba", apellido: "Registro", email: "prueba@liceo.cl", password: "Prueba12345", area: "Matemáticas", especialidad: "Cálculo" });
   expect(res.status).toBe(201);
   expect(res.body.rol).toBe("otro_area");
   expect(res.body.nivelAcceso).toBe("basico");
   expect(res.body.iniciales).toBe("PR");
   expect(res.body.password).toBeUndefined();
 
-  const loginNuevo = await request(app).post("/api/login").send({ usuario: "prof_prueba", password: "prueba123" });
+  const loginNuevo = await request(app).post("/api/login").send({ usuario: "prof_prueba", password: "Prueba12345" });
   expect(loginNuevo.status).toBe(200);
   expect(loginNuevo.body.token).toBeTruthy();
 
@@ -790,15 +836,15 @@ test("registro: crea cuenta con rol otro_area, sin password y permite iniciar se
 });
 
 test("registro: rechaza usuario o correo duplicado y datos inválidos", async () => {
-  const dupId = await request(app).post("/api/registro").send({ id: "INSUCO", nombre: "X", apellido: "Y", email: "nuevo@liceo.cl", password: "clave123" });
+  const dupId = await request(app).post("/api/registro").send({ id: "INSUCO", nombre: "X", apellido: "Y", email: "nuevo@liceo.cl", password: "Clave12345" });
   expect(dupId.status).toBe(409);
   expect(dupId.body.error).toContain("usuario");
 
-  const dupEmail = await request(app).post("/api/registro").send({ id: "prof_x", nombre: "X", apellido: "Y", email: "admin@liceo.cl", password: "clave123" });
+  const dupEmail = await request(app).post("/api/registro").send({ id: "prof_x", nombre: "X", apellido: "Y", email: "admin@liceo.cl", password: "Clave12345" });
   expect(dupEmail.status).toBe(409);
   expect(dupEmail.body.error).toContain("correo");
 
-  const malDominio = await request(app).post("/api/registro").send({ id: "prof_mal", nombre: "X", apellido: "Y", email: "no-es-un-correo", password: "clave123" });
+  const malDominio = await request(app).post("/api/registro").send({ id: "prof_mal", nombre: "X", apellido: "Y", email: "no-es-un-correo", password: "Clave12345" });
   expect(malDominio.status).toBe(400);
 
   const corta = await request(app).post("/api/registro").send({ id: "prof_corta", nombre: "X", apellido: "Y", email: "corta@liceo.cl", password: "123" });
@@ -807,6 +853,7 @@ test("registro: rechaza usuario o correo duplicado y datos inválidos", async ()
 
 test("recuperación: solicitud genérica, token de 30 min, nuevo login y refresh revocado", async () => {
   const { abrirConexion } = await import(`../db.js?v=${Date.now()}`);
+  const hashOriginal = await hashDeUsuario("prof_camila");
 
   // El email inexistente también responde ok: no se revela si la cuenta existe.
   const falso = await request(app).post("/api/recuperar-contrasena").send({ email: "nadie@liceo.cl" });
@@ -846,12 +893,9 @@ test("recuperación: solicitud genérica, token de 30 min, nuevo login y refresh
   const reuso = await request(app).post(`/api/recuperar-contrasena/${token}`).send({ newPassword: "otraClave1" });
   expect(reuso.status).toBe(400);
 
-  // Se restaura la contraseña original para no afectar al resto de la suite.
-  const restaura = await request(app)
-    .post("/api/change-password")
-    .set("Authorization", `Bearer ${login.body.token}`)
-    .send({ currentPassword: "camilaNueva99", newPassword: "camila123" });
-  expect(restaura.status).toBe(200);
+  // Se restaura la contraseña original directamente en la BD: la política ya no
+  // acepta "camila123" (clave demo) y no se puede reponer por la API.
+  await restaurarPassword("prof_camila", hashOriginal);
 });
 
 /* Regresiones de seguridad (auditoría de la sección 2 del informe) */
@@ -938,7 +982,8 @@ test("seguridad: los códigos 2FA tienen límite de intentos (429)", async () =>
   expect(limite.body.error).toBeTruthy();
 });
 
-test("seguridad: contraseña de menos de 8 caracteres se rechaza en todos los caminos", async () => {
+test("seguridad: la política de contraseñas se aplica en todos los caminos", async () => {
+  // Demasiado corta.
   const registro = await request(app).post("/api/registro").send({
     id: "prof_corta", nombre: "Corta", apellido: "Clave", email: "corta@liceo.cl", password: "corta12"
   });
@@ -954,6 +999,18 @@ test("seguridad: contraseña de menos de 8 caracteres se rechaza en todos los ca
     .set("Authorization", `Bearer ${await loginCamila()}`)
     .send({ currentPassword: "camila123", newPassword: "corta12" });
   expect(cambio.status).toBe(400);
+
+  // Cumple la longitud pero no la variedad (sin mayúscula).
+  const sinMayuscula = await request(app).post("/api/registro").send({
+    id: "prof_vari", nombre: "Vari", apellido: "edad", email: "vari@liceo.cl", password: "sololetras1"
+  });
+  expect(sinMayuscula.status).toBe(400);
+
+  // Cumple longitud y variedad pero es una contraseña común.
+  const comun = await request(app).post("/api/registro").send({
+    id: "prof_comun", nombre: "Comun", apellido: "Clave", email: "comun@liceo.cl", password: "Password123"
+  });
+  expect(comun.status).toBe(400);
 });
 
 test("seguridad: un no-admin no obtiene el email de terceros en el padrón", async () => {

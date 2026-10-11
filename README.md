@@ -183,13 +183,13 @@ y no se pueden guardar cambios.
 
 ## 7. Seguridad
 
-- **Contraseñas** con hash bcrypt, mínimo de 8 caracteres en todos los caminos y nunca
-  devueltas por la API.
+- **Contraseñas** con hash bcrypt, mínimo de 10 caracteres con mayúscula y número en
+  todos los caminos, rechazo de contraseñas comunes y nunca devueltas por la API.
 - **Sesiones** con JWT: token de acceso de 2 horas y token de refresco de 30 días con
   rotación; reutilizar un token ya usado se rechaza, y cerrar sesión o cambiar la contraseña
   revoca todos los tokens.
-- **Verificación en dos pasos (TOTP)** para el administrador, con clave QR y ventana de
-  5 minutos.
+- **Verificación en dos pasos (TOTP)** para el administrador y los técnicos, con clave QR
+  y ventana de 5 minutos.
 - **Límites de peticiones** en el inicio de sesión, el registro, la recuperación y las rutas
   de escritura. El límite de sesión combina IP y usuario, así que dos profesores no se
   bloquean entre sí.
@@ -259,6 +259,7 @@ Configuración del repositorio, una sola vez:
 ```
 gh secret set CLOUDFLARE_API_TOKEN          # token con permiso Account > Cloudflare Pages: Edit
 gh secret set RAILWAY_API_TOKEN             # token de railway.app/account/tokens
+gh secret set LC_SALUD_TOKEN                # mismo valor que la variable LC_SALUD_TOKEN de la API
 gh variable set RAILWAY_PROJECT_ID          # identificadores del servicio, desde la URL del panel
 gh variable set RAILWAY_SERVICE_ID
 gh variable set RAILWAY_ENVIRONMENT_ID
@@ -269,7 +270,9 @@ El backend se configura en el hosting con `LC_DB_DIR` apuntando al volumen, `JWT
 del navegador (y no la del proxy), define el mismo `LC_PROXY_SECRET` en la API y en el proyecto
 de Pages: la Pages Function firma la IP que sí conoce (`cf-connecting-ip`) y el backend solo la
 acepta si el secreto coincide; sin él se sigue usando `req.ip`/`x-forwarded-for`. El proyecto de
-Pages también define `API_ORIGIN` hacia la API. El chequeo de vida es `GET /api/salud`.
+Pages también define `API_ORIGIN` hacia la API. El chequeo de vida es `GET /api/salud`: responde
+`{ ok: true }` a cualquiera y solo revela `servicio` y `version` si se envía el mismo `LC_SALUD_TOKEN`
+(anti-fingerprinting), que por eso se define en la API y como secreto del despliegue.
 
 **Cabeceras de seguridad**: al publicarse como archivos estáticos, `helmet` deja de afectar
 al frontend, por eso `website/public/_headers` replica la misma política. Es el único punto

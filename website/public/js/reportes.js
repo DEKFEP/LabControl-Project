@@ -128,9 +128,18 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     }
   }
 
+  // Defensa en profundidad: el servidor valida los adjuntos con el mismo allowlist,
+  // pero un dato manipulado no debe llegar nunca a `src`/`href` sin comprobarse.
+  const DATA_URL_SEGURA = /^data:(image|application|text)\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=\r\n]*$/;
+
+  function adjuntoSeguro(a) {
+    return !!a && typeof a.data === "string" && DATA_URL_SEGURA.test(a.data);
+  }
+
   function renderAdjuntosDetalle(rep) {
     const cont   = document.getElementById("rep-adjuntos");
-    const adj    = rep.adjuntos ?? [];
+    const todos  = rep.adjuntos ?? [];
+    const adj    = todos.filter(adjuntoSeguro);
     if (!adj.length) { cont.innerHTML = ""; return; }
 
     const imagenes = adj.filter((a) => (a.tipo ?? "").startsWith("image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(a.nombre));
@@ -145,8 +154,8 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
           <div class="adj-grid">
             ${imagenes.map((a, i) => `
               <figure class="adj-thumb" title="${esc(a.nombre)}">
-                <img src="${a.data}" alt="${esc(a.nombre)}" loading="lazy"
-                  data-adj="${rep.adjuntos.indexOf(a)}" />
+                <img src="${esc(a.data)}" alt="${esc(a.nombre)}" loading="lazy"
+                  data-adj="${todos.indexOf(a)}" />
                 <figcaption>${esc(a.nombre)}</figcaption>
               </figure>
             `).join("")}
@@ -154,7 +163,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
         ${otros.length ? `
           <div class="adj-chips" style="margin-top:${imagenes.length ? 10 : 0}px">
             ${otros.map((a) => `
-              <a class="adj-file" href="${a.data}" download="${esc(a.nombre)}" title="Descargar ${esc(a.nombre)}">
+              <a class="adj-file" href="${esc(a.data)}" download="${esc(a.nombre)}" title="Descargar ${esc(a.nombre)}">
                 <i data-lucide="file-text"></i>
                 <span>${esc(a.nombre)}</span>
                 <small>${formatoBytes(a.tamano)}</small>
@@ -174,7 +183,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
   function verImagenLightbox(reporteId, indice) {
     const rep = reportesCache.find((r) => r.id === reporteId);
     const adj = rep?.adjuntos?.[indice];
-    if (!adj) return;
+    if (!adjuntoSeguro(adj)) return;
     document.getElementById("lightbox-img").src = adj.data;
     document.getElementById("lightbox-img").alt = adj.nombre;
     document.getElementById("lightbox").style.display = "flex";
