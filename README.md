@@ -55,7 +55,8 @@ estáticos para trabajar sin conexión.
 | Crear, editar y eliminar reportes propios | Sí | Sí | Sí |
 | Editar o eliminar reportes de otros | No | No | Sí |
 | Crear cuentas y editar las de otros | No | No | Sí |
-| Auditoría, respaldos y verificación en dos pasos | No | No | Sí |
+| Auditoría y respaldos | No | No | Sí |
+| Activar la verificación en dos pasos de la propia cuenta | Sí | Sí | Sí |
 
 Editar el perfil propio está disponible para todos; cambiar el rol, el área, el estado de la
 cuenta o la contraseña de otra persona es solo del administrador.
@@ -188,8 +189,8 @@ y no se pueden guardar cambios.
 - **Sesiones** con JWT: token de acceso de 2 horas y token de refresco de 30 días con
   rotación; reutilizar un token ya usado se rechaza, y cerrar sesión o cambiar la contraseña
   revoca todos los tokens.
-- **Verificación en dos pasos (TOTP)** para el administrador y los técnicos, con clave QR
-  y ventana de 5 minutos.
+- **Verificación en dos pasos (TOTP)** disponible para cualquier cuenta (se activa desde
+  Configuración → Seguridad), con clave QR y ventana de 5 minutos.
 - **Límites de peticiones** en el inicio de sesión, el registro, la recuperación y las rutas
   de escritura. El límite de sesión combina IP y usuario, así que dos profesores no se
   bloquean entre sí.

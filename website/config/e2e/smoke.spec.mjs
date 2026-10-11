@@ -221,7 +221,7 @@ test("sesión de larga duración: el access token expirado se renueva solo", asy
   expect(atDespues.value).not.toBe(atAntes.value);
 });
 
-test("modo offline: el SW sirve el shell y los assets desde caché y degrada a datos demo", async ({ page, context }) => {
+test("modo offline: el SW sirve el shell, los assets y el inventario desde caché", async ({ page, context }) => {
   const errores = [];
   page.on("pageerror", (e) => errores.push(e.message));
 
@@ -230,9 +230,13 @@ test("modo offline: el SW sirve el shell y los assets desde caché y degrada a d
   await page.reload();
   await expect(page.locator(".sidebar")).toBeVisible();
 
+  // Asegura que el inventario ya quedó guardado antes de cortar la red.
+  await page.evaluate(async () => { await (await import("./js/data.js")).cargarLaboratorios(); });
+
+  // La caché de estáticos es "labcontrol-vX"; la de datos es "labcontrol-api-vX".
   const cache = await page.evaluate(async () => {
     const claves = await caches.keys();
-    const cache = await caches.open(claves.find((k) => k.startsWith("labcontrol")));
+    const cache = await caches.open(claves.find((k) => k.startsWith("labcontrol-v")));
     return (await cache.keys()).map((r) => new URL(r.url).pathname.replace(/^\//, ""));
   });
   expect(cache).toContain("index.html");
@@ -253,7 +257,7 @@ test("modo offline: el SW sirve el shell y los assets desde caché y degrada a d
 
   const swCache = await page.evaluate(async (v) => {
     const claves = await caches.keys();
-    const nombre = claves.find((k) => k.startsWith("labcontrol"));
+    const nombre = claves.find((k) => k.startsWith("labcontrol-v"));
     const guardada = await caches.open(nombre);
     const urls = (await guardada.keys()).map((r) => r.url);
     return { nombre, versionado: urls.some((u) => u.endsWith(`app.js?v=${v}`)) };
@@ -277,11 +281,12 @@ test("modo offline: el SW sirve el shell y los assets desde caché y degrada a d
   const degradacion = await page.evaluate(async () => {
     const mod = await import("./js/data.js");
     return mod.cargarLaboratorios().then(
-      () => "datos",
+      (datos) => (Array.isArray(datos) && datos.length ? "datos" : "vacio"),
       () => "error-capturado"
     );
   });
-  expect(degradacion).toBe("error-capturado");
+  // Sin conexión, el inventario que guardó el service worker sigue disponible.
+  expect(degradacion).toBe("datos");
   await context.setOffline(false);
 
   expect(errores).toEqual([]);

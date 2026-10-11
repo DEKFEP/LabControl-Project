@@ -15,7 +15,6 @@ const CONFIG_DEFAULT = {
 /* configuracion.js — lógica de la página Configuración. */
 renderSidebar("configuracion.html");
 const esAdmin = AUTH.esAdmin();
-const esTecnico = AUTH.puedeVerTecnico();
 const sesion  = AUTH.getSesion();
 
 // Se llenan cuando responde la API; las funciones de abajo los usan al interactuar.
@@ -1100,10 +1099,8 @@ async function refrescarEstado2FA() {
       if (btnConfig) btnConfig.style.display = "none";
       if (btnDesac) btnDesac.style.display = "";
     } else {
-      desc.textContent = esTecnico
-        ? "Inactiva. Protégete con un código desde tu aplicación de autenticación (Google Authenticator, Aegis, etc.)."
-        : "Solo administradores y técnicos pueden activar la verificación en dos pasos.";
-      if (btnConfig) btnConfig.style.display = esTecnico ? "" : "none";
+      desc.textContent = "Inactiva. Protégete con un código desde tu aplicación de autenticación (Google Authenticator, Aegis, etc.).";
+      if (btnConfig) btnConfig.style.display = "";
       if (btnDesac) btnDesac.style.display = "none";
     }
   } catch {

@@ -591,6 +591,40 @@ const MIGRACIONES = [
     // se haya escrito en ellas, y dejarlas es inocuo. Forzar el rollback solo
     // desregistra la migración; la base conserva las columnas.
     nota: "Las columnas que añadió no se pueden quitar sin perder los datos que se hayan escrito en ellas, así que se dejan en su sitio. Forzar el rollback solo desregistra la migración: la base queda con las columnas añadidas, que no estorban."
+  },
+  {
+    version: 11,
+    nombre: "desafíos de verificación en dos pasos persistidos en la base",
+    migrar(d) {
+      // Antes el servidor guardaba los desafíos de login y los secretos a medio
+      // configurar en memoria: un reinicio (p. ej. un redespliegue) los perdía y
+      // el usuario tenía que volver a empezar. Con estas tablas sobreviven al
+      // reinicio y quedan cubiertos por el respaldo.
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS desafios_2fa (
+          login_id   TEXT PRIMARY KEY,
+          usuario_id TEXT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+          expira     INTEGER NOT NULL,
+          intentos   INTEGER NOT NULL DEFAULT 0
+        )
+      `);
+      d.exec("CREATE INDEX IF NOT EXISTS idx_desafios_2fa_expira ON desafios_2fa(expira)");
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS pendientes_2fa (
+          usuario_id TEXT PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+          secreto    TEXT NOT NULL,
+          expira     INTEGER NOT NULL
+        )
+      `);
+      d.exec("CREATE INDEX IF NOT EXISTS idx_pendientes_2fa_expira ON pendientes_2fa(expira)");
+    },
+    revertir(d) {
+      d.exec("DROP INDEX IF EXISTS idx_pendientes_2fa_expira");
+      d.exec("DROP TABLE IF EXISTS pendientes_2fa");
+      d.exec("DROP INDEX IF EXISTS idx_desafios_2fa_expira");
+      d.exec("DROP TABLE IF EXISTS desafios_2fa");
+    },
+    nota: "Se pierden los desafíos de login en curso y las configuraciones 2FA a medias: quien estuviera activando la verificación tendrá que volver a empezar."
   }
 ];
 
