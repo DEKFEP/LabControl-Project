@@ -230,8 +230,8 @@ Hay **un solo despliegue**, disparado por `push` a `master` desde
 `.github/workflows/deploy-cloudflare.yml`:
 
 1. Publica `website/public` en Cloudflare Pages.
-2. Avisa a Railway por su API GraphQL que despliegue el servicio y mira si aparece una
-   construcción nueva.
+2. Sube el backend a Railway con la CLI (`railway up website/backend`), que crea un despliegue
+   nuevo desde el commit actual y espera a que la construcción termine.
 3. Comprueba que las nueve páginas respondan `200`, que `robots.txt` y el `404` existan y que
    la API publicada sea compatible con el backend actual.
 
@@ -239,16 +239,16 @@ Si alguna comprobación falla, el flujo queda en rojo.
 
 ### La API y las versiones
 
-La API vive en Railway porque usa `node:sqlite` y necesita disco. El servicio tiene este
-repositorio conectado **con el despliegue automático apagado**, y la API pública de Railway no
-permite elegir el commit: un redespliegue reconstruye el último commit ya compilado. Por eso el
-paso 2 no puede garantizar que la API tome el commit nuevo; avisa y sigue.
+La API vive en Railway porque usa `node:sqlite` y necesita disco. El servicio se creó subiendo el
+código con la CLI (no tiene repositorio ni directorio raíz configurados), y su despliegue
+automático está apagado, así que la API pública no construye nada por sí sola. Por eso el
+workflow la actualiza con `railway up`: sube `website/backend` como raíz, adjunta el commit y
+espera a que la construcción termine. Así la API queda siempre con el código del push.
 
 El paso 3 es el que decide. No compara la versión de la web con la de la API, sino con **la
 versión que declara el último commit que tocó `website/backend`**: si el backend no cambió desde
 la última versión, la API puede quedarse atrás sin romper nada y el flujo pasa; si el backend sí
-cambió y la API no lo recogió, el flujo falla diciendo que hay que activar el despliegue
-automático del servicio en el panel de Railway.
+cambió y la API no lo recogió, el flujo falla.
 
 Por eso `GET /api/salud` devuelve la versión **de la API**, no la de la web, y esa cadena solo
 sube cuando cambia el comportamiento del backend. Subirla en cada versión obligaría a
