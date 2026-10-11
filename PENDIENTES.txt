@@ -81,13 +81,12 @@ Captcha en el registro y en la recuperación de contraseña
 
 4. LIMITACIONES DEL DESPLIEGUE ACTUAL
 ------------------------------------
-La auditoría no guarda la IP real del profesor
-  El hosting intermediario reemplaza la cadena X-Forwarded-For por la dirección de su
-  propio borde, así que en la auditoría queda la IP del proxy. El límite de intentos de
-  inicio de sesión no se rompe por esto, porque su clave combina IP y usuario y cada
-  cuenta conserva su propio cupo. Para guardar la IP real habría que pasarla en una
-  cabecera propia, con un secreto compartido entre el sitio y la API, y leerla en el
-  backend.
+La IP real del profesor en la auditoría
+  RESUELTO en 4.1. El sitio (Pages Function) firma la IP que sí conoce (cf-connecting-ip)
+  con LC_PROXY_SECRET y el backend solo la acepta si el secreto coincide; así la auditoría
+  y el rate limiting usan la IP real y no la del proxy. Requiere definir el mismo
+  LC_PROXY_SECRET en la API y en el proyecto de Pages (ver website/backend/.env.example);
+  sin él, se sigue usando la IP del proxy.
 
 El backend está lejos de Chile
   El servicio corre en una región de Estados Unidos. La latencia se nota en las primeras
@@ -131,3 +130,22 @@ Se revisaron y se dejan como están, con su motivo:
     duran minutos.
   - La aplicación está reservada a personas adultas y se opera bajo la supervisión del
     establecimiento; así consta en los términos de uso y en la política de privacidad.
+
+
+6. DESPLIEGUE DE LA VERSIÓN 4.1 (acciones en la infraestructura)
+----------------------------------------------------------------
+La web se publica sola, pero la API y las variables dependen del panel. Para cerrar el
+despliegue de 4.1:
+
+  1. Activar en Railway el despliegue automático de la rama master (hoy está apagado),
+     para que la API tome el commit de 4.1. Si no, GET /api/salud sigue devolviendo la
+     versión anterior y el chequeo de versión del workflow falla.
+  2. Definir el mismo LC_PROXY_SECRET en el servicio de Railway y en el proyecto de
+     Cloudflare Pages.
+  3. Definir LC_PUBLIC_URL con la URL https del sitio en Railway (habilita las cookies
+     Secure y el enlace de recuperación de contraseña).
+  4. Definir API_ORIGIN en el proyecto de Pages apuntando a la API de Railway.
+  5. Rotar la contraseña del administrador INSUCO: sus credenciales de ejemplo estuvieron
+     en el código hasta 4.1.
+
+Referencia de todas las variables: website/backend/.env.example.
