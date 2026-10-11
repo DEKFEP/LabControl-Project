@@ -63,13 +63,10 @@ jobs:
             --commit-dirty=true
 
       # La API no se puede publicar junto con la web (node:sqlite necesita disco),
-      # asi que vive en Railway, con este repositorio conectado pero con el
-      # despliegue automatico apagado. Con el apagado, un "redeploy" a secas solo
-      # reconstruye el ultimo commit ya compilado: la API se queda en la version
-      # anterior sin avisar. La API publica de Railway no permite elegir el commit,
-      # asi que este paso no puede garantizar el commit nuevo; por eso el ultimo
-      # paso comprueba la version y, si no cuadra, dice que hay que activar el
-      # despliegue automatico del servicio en el panel de Railway.
+      # asi que vive en Railway. Con el despliegue automatico del servicio apagado
+      # y sin forma de elegir el commit por la API publica, aqui se sube el arbol
+      # actual con la CLI (`railway up`), que crea un despliegue nuevo desde este
+      # commit. Asi la API queda al dia con cada push, sin tocar el panel.
       - name: Desplegar la API en Railway
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
@@ -81,74 +78,52 @@ jobs:
 
           if [ -z "${RAILWAY_API_TOKEN:-}" ] || [ -z "${SERVICE_ID:-}" ] || [ -z "${ENVIRONMENT_ID:-}" ]; then
             echo "::notice::La API no se redespliega sola: falta el secreto RAILWAY_API_TOKEN o las variables RAILWAY_SERVICE_ID / RAILWAY_ENVIRONMENT_ID."
-            echo "::notice::Los ids salen de la URL del dashboard (railway.app/project/<proyecto>/service/<servicio>?environment=<entorno>) y el token de railway.app/account/tokens."
+            echo "::notice::El token sale de railway.app/account/tokens y los ids de la URL del dashboard (railway.app/project/<proyecto>/service/<servicio>?environment=<entorno>)."
             echo "::notice::Se guardan con 'gh secret set RAILWAY_API_TOKEN', 'gh variable set RAILWAY_SERVICE_ID' y 'gh variable set RAILWAY_ENVIRONMENT_ID'."
             exit 0
           fi
 
-          # El endpoint y las mutaciones son los de la API publica de Railway.
-          api() {
-            curl -fsS -X POST https://backboard.railway.com/graphql/v2 \
-              -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-              -H "Content-Type: application/json" \
-              --data "$1"
+          npm install --global @railway/cli@5
+
+          # La config del servicio dice si construye desde un subdirectorio del
+          # repositorio (rootDirectory) o si la raiz del servicio es la carpeta
+          # que se le sube. Segun eso se sube el repositorio entero (para que
+          # Railway aplique el directorio raiz) o solo website/backend.
+          cat > /tmp/svc.graphql <<'EOF'
+          query($s: String!, $e: String!) {
+            serviceInstance(serviceId: $s, environmentId: $e) {
+              rootDirectory
+              source { repo image }
+            }
+          }
+          EOF
+          cuerpo="$(jq -n --arg q "$(cat /tmp/svc.graphql)" --arg s "$SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{query:$q, variables:{s:$s, e:$e}}')"
+          cfg="$(curl -fsS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$cuerpo" || true)"
+          echo "Config del servicio: ${cfg:-sin respuesta}"
+          root="$(printf '%s' "$cfg" | jq -r '.data.serviceInstance.rootDirectory // empty' 2>/dev/null || true)"
+
+          # `railway up` envia el arbol de trabajo y espera (--ci) a que la
+          # construccion termine; si falla, el paso queda en rojo.
+          subir() {
+            railway up "$@" --ci \
+              --project "$PROYECTO_ID" \
+              --environment "$ENVIRONMENT_ID" \
+              --service "$SERVICE_ID" \
+              --message "$GITHUB_SHA"
           }
 
-          # Id del despliegue que hay hoy: sirve para no dar por bueno el SUCCESS
-          # del despliegue anterior mientras el nuevo aun no aparece en la lista.
-          estado_despliegue() {
-            api "{\"query\":\"query Estado(\$servicio: String!, \$entorno: String!) { deployments(first: 1, input: { serviceId: \$servicio, environmentId: \$entorno }) { edges { node { id status } } } }\",\"variables\":{\"servicio\":\"$SERVICE_ID\",\"entorno\":\"$ENVIRONMENT_ID\"}}" > "$1"
-          }
-
-          estado_despliegue /tmp/estado-antes.json
-          anterior="$(jq -r '.data.deployments.edges[0]?.node | (.id? // empty)' /tmp/estado-antes.json)"
-          echo "Despliegue actual de la API (proyecto ${PROYECTO_ID:-sin id}): ${anterior:-desconocido}."
-
-          # `environmentTriggersDeploy` es la mutacion documentada para desplegar
-          # un servicio, y no permite elegir el commit: construye lo que el
-          # servicio tenga configurado. Con el despliegue automatico apagado
-          # responde "ok" pero no crea ninguna construccion, asi que lo un que
-          # decide si la API quedo al dia es el chequeo de version del ultimo
-          # paso. Por eso aqui no se falla: solo se avisa.
-          disparado="$(api "{\"query\":\"mutation Desplegar(\$entorno: String!, \$proyecto: String!, \$servicio: String!) { environmentTriggersDeploy(input: { environmentId: \$entorno, projectId: \$proyecto, serviceId: \$servicio }) }\",\"variables\":{\"entorno\":\"$ENVIRONMENT_ID\",\"proyecto\":\"${PROYECTO_ID:-}\",\"servicio\":\"$SERVICE_ID\"}}")"
-
-          if echo "$disparado" | grep -q '"errors"'; then
-            echo "::warning::environmentTriggersDeploy no sirvio: $disparado"
-            echo "::warning::Se intenta serviceInstanceRedeploy, que reconstruye el ultimo commit compilado."
-            disparado="$(api "{\"query\":\"mutation Redeploy(\$servicio: String!, \$entorno: String!) { serviceInstanceRedeploy(serviceId: \$servicio, environmentId: \$entorno) }\",\"variables\":{\"servicio\":\"$SERVICE_ID\",\"entorno\":\"$ENVIRONMENT_ID\"}}")"
+          if [ -n "$root" ] && [ "$root" != "/" ]; then
+            echo "El servicio construye desde '$root': se sube la raiz del repositorio."
+            subir
+          else
+            echo "El servicio no declara directorio raiz: se sube website/backend como raiz."
+            subir website/backend --path-as-root
           fi
 
-          if echo "$disparado" | grep -q '"errors"'; then
-            echo "::error::Railway no acepto el redespliegue: $disparado"
-            exit 1
-          fi
-          echo "API avisada; esperando a que aparezca una construccion nueva."
-
-          # Si se devuelve el control sin esperar, el chequeo de version de mas
-          # abajo correria contra la API vieja y fallaria por el motivo equivocado.
-          for intento in $(seq 1 12); do
-            sleep 10
-            estado_despliegue /tmp/estado-nuevo.json
-            nuevo="$(jq -r '.data.deployments.edges[0]?.node | (.id? // empty)' /tmp/estado-nuevo.json)"
-            estado="$(jq -r '.data.deployments.edges[0]?.node | (.status? // empty)' /tmp/estado-nuevo.json)"
-            if [ "$nuevo" = "$anterior" ]; then
-              echo "Intento $intento: todavia no aparece una construccion nueva en Railway."
-              continue
-            fi
-            case "${estado:-}" in
-              SUCCESS) echo "API desplegada correctamente (intento $intento)."; exit 0 ;;
-              FAILED|CRASHED) echo "::error::El despliegue de la API en Railway quedo en $estado."; exit 1 ;;
-              *) echo "Estado de la API: ${estado:-desconocido} (intento $intento)." ;;
-            esac
-          done
-
-          # No aparecio ninguna construccion nueva. Con el despliegue automatico
-          # apagado esto es lo normal: la API sigue con el ultimo commit que
-          # compilo. No se falla aqui porque la API puede estar perfectamente al
-          # dia; de eso se encarga el chequeo de version del ultimo paso, que si
-          # bloquea cuando el backend de verdad cambio y la API se quedo atras.
-          echo "::notice::Railway no arranco ninguna construccion nueva (el servicio tiene el despliegue automatico apagado)."
-          echo "::notice::La API se queda con el ultimo commit compilado. Para que siga al dia sola, activa el despliegue automatico de la rama master en el panel de Railway."
+          echo "API desplegada en Railway con el commit ${GITHUB_SHA:0:7}."
 
       - name: Comprobar la web
         run: |
