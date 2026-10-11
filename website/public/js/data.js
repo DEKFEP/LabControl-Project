@@ -947,6 +947,9 @@ export const AUTH = {
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin"
     }).catch(() => {});
+    // Borra el inventario guardado para consultarlo sin conexión: no debe quedar
+    // nada de esta sesión en un equipo compartido.
+    try { navigator.serviceWorker?.controller?.postMessage({ type: "limpiar-cache-api" }); } catch { /* sin service worker */ }
     try { localStorage.removeItem("lc_sesion"); } catch { /* sin almacenamiento */ }
     window.location.href = "login.html";
   },

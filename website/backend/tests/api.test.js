@@ -550,7 +550,7 @@ test("IP anclada: el proxy de confianza fija la IP real y el resto no puede fals
 
 /* ===== Verificación en dos pasos (2FA) ===== */
 
-test("2FA: no-admin no puede configurarlo y el flujo admin completo funciona", async () => {
+test("2FA: cualquier rol puede configurarlo y el flujo admin completo funciona", async () => {
   const { codigoActual } = await import("../totp.mjs");
 
   // Estado inicial: desactivado.
@@ -559,11 +559,12 @@ test("2FA: no-admin no puede configurarlo y el flujo admin completo funciona", a
     .set("Authorization", `Bearer ${await login()}`);
   expect(estadoInicial.body.habilitado).toBe(false);
 
-  // Un no-admin no puede iniciar la configuración.
-  const noAdmin = await request(app)
+  // Cualquier rol con sesión (también "otro_area") puede iniciar la configuración.
+  const otroRol = await request(app)
     .post("/api/2fa/setup")
     .set("Authorization", `Bearer ${await loginCamila()}`);
-  expect(noAdmin.status).toBe(403);
+  expect(otroRol.status).toBe(200);
+  expect(otroRol.body.qrDataUrl).toMatch(/^data:image\/png;base64,/);
 
   // Setup: genera secreto, URI compatible y QR (data URL).
   const setup = await request(app)

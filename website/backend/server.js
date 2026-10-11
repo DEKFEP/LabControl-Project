@@ -330,16 +330,6 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// Admin o técnico (programación). Se usa en la verificación en dos pasos: es
-// una protección de la propia cuenta y debe poder activarla cualquier usuario
-// con acceso a datos técnicos, no solo el administrador.
-function requireTecnico(req, res, next) {
-  if (!esTecnico(req.user?.rol)) {
-    return res.status(403).json({ error: "Se requieren permisos de administrador o técnico" });
-  }
-  next();
-}
-
 /* Cookies de sesión (HttpOnly)
    ------------------------------------------------------------------
    El token de acceso y el de refresco viajan en cookies HttpOnly, de modo
@@ -683,25 +673,29 @@ function registrarAuditoria(req, accion, detalle = {}, contexto = null) {
 }
 
 /* Verificación en dos pasos (2FA) */
-// Desafíos de login (en memoria): un login con 2FA activo emite un desafío de
-// corta duración y solo entrega tokens tras validar el código TOTP.
-const DESAFIOS_2FA = new Map();          // loginId -> { usuarioId, expira, intentos }
+// Desafíos de login: un login con 2FA activo emite un desafío de corta duración
+// y solo entrega tokens tras validar el código TOTP. Se guardan en la base
+// (tablas desafios_2fa y pendientes_2fa) para que un reinicio del servidor no
+// invalide el segundo paso ni la configuración a medias.
 const DESAFIO_TTL_MS = 5 * 60 * 1000;
 const DESAFIO_MAX_INTENTOS = 5;
-const PENDIENTES_2FA = new Map();        // usuarioId -> { secreto, otpauth, expira }
 
 function limpiarDesafiosVencidos() {
   const ahora = Date.now();
-  for (const [clave, dato] of DESAFIOS_2FA) if (dato.expira < ahora) DESAFIOS_2FA.delete(clave);
-  for (const [clave, dato] of PENDIENTES_2FA) if (dato.expira < ahora) PENDIENTES_2FA.delete(clave);
+  db.prepare("DELETE FROM desafios_2fa WHERE expira < ?").run(ahora);
+  db.prepare("DELETE FROM pendientes_2fa WHERE expira < ?").run(ahora);
 }
 
-// El estado en memoria de los desafíos pertenece a la base que está en servicio.
-// Al restaurar un respaldo se purga entero: si no, un desafío emitido antes de
-// la restauración podría validar contra el secreto de otra versión de la base.
+// Los desafíos y las configuraciones a medias pertenecen a la base que está en
+// servicio. Al restaurar un respaldo se purgan: si no, un desafío emitido antes
+// de la restauración podría validar contra el secreto de otra versión de la base.
 alRestaurar(() => {
-  DESAFIOS_2FA.clear();
-  PENDIENTES_2FA.clear();
+  try {
+    db.prepare("DELETE FROM desafios_2fa").run();
+    db.prepare("DELETE FROM pendientes_2fa").run();
+  } catch (err) {
+    console.error("No se pudieron limpiar los desafíos 2FA tras restaurar:", err?.message || err);
+  }
 });
 
 // Limpieza periódica de desafíos 2FA vencidos (cada 5 minutos)
@@ -1025,7 +1019,8 @@ app.post("/api/login", loginLimiter, async (req, res) => {
   if (row.totp_habilitado === 1 && row.totp_secreto) {
     limpiarDesafiosVencidos();
     const loginId = randomBytes(32).toString("hex");
-    DESAFIOS_2FA.set(loginId, { usuarioId: row.id, expira: Date.now() + DESAFIO_TTL_MS, intentos: 0 });
+    db.prepare("INSERT INTO desafios_2fa (login_id, usuario_id, expira, intentos) VALUES (?, ?, ?, 0)")
+      .run(loginId, row.id, Date.now() + DESAFIO_TTL_MS);
     registrarAuditoria(req, "login_2fa_pendiente", { usuario: row.id }, { id: row.id, rol: row.rol });
     return res.json({ requires2FA: true, loginId, usuario: usrFromRow(row) });
   }
@@ -1044,29 +1039,29 @@ app.post("/api/login/2fa", loginLimiter, (req, res) => {
     return res.status(400).json({ error: "Faltan el identificador de inicio de sesión y el código" });
   }
 
-  const desafio = DESAFIOS_2FA.get(loginId);
+  const desafio = db.prepare("SELECT usuario_id, expira, intentos FROM desafios_2fa WHERE login_id = ?").get(loginId);
   if (!desafio || desafio.expira < Date.now()) {
-    DESAFIOS_2FA.delete(loginId);
+    db.prepare("DELETE FROM desafios_2fa WHERE login_id = ?").run(loginId);
     return res.status(401).json({ error: "El intento de verificación expiró. Inicia sesión nuevamente." });
   }
   if (desafio.intentos >= DESAFIO_MAX_INTENTOS) {
-    DESAFIOS_2FA.delete(loginId);
+    db.prepare("DELETE FROM desafios_2fa WHERE login_id = ?").run(loginId);
     return res.status(429).json({ error: "Demasiados intentos. Inicia sesión nuevamente." });
   }
 
-  const row = db.prepare("SELECT * FROM usuarios WHERE id = ? AND activo = 1").get(desafio.usuarioId);
+  const row = db.prepare("SELECT * FROM usuarios WHERE id = ? AND activo = 1").get(desafio.usuario_id);
   if (!row || row.totp_habilitado !== 1 || !row.totp_secreto) {
-    DESAFIOS_2FA.delete(loginId);
+    db.prepare("DELETE FROM desafios_2fa WHERE login_id = ?").run(loginId);
     return res.status(401).json({ error: "La verificación no está disponible. Inicia sesión nuevamente." });
   }
 
   if (!verificarCodigo(row.totp_secreto, String(codigo))) {
-    desafio.intentos += 1;
+    db.prepare("UPDATE desafios_2fa SET intentos = intentos + 1 WHERE login_id = ?").run(loginId);
     registrarAuditoria(req, "login_2fa_codigo_invalido", { usuario: row.id }, { id: row.id, rol: row.rol });
     return res.status(401).json({ error: "El código de verificación es incorrecto" });
   }
 
-  DESAFIOS_2FA.delete(loginId);
+  db.prepare("DELETE FROM desafios_2fa WHERE login_id = ?").run(loginId);
   registrarAuditoria(req, "login_ok", { usuario: row.id, con2fa: true }, { id: row.id, rol: row.rol });
   const token = firmarAcceso(row);
   const refreshToken = emitirRefreshToken(row.id);
@@ -1104,7 +1099,9 @@ app.get("/api/2fa/estado", authenticateToken, (req, res) => {
 });
 
 // Inicia la configuración: genera un secreto nuevo (no se activa hasta verificar).
-app.post("/api/2fa/setup", authenticateToken, requireTecnico, async (req, res) => {
+// Lo puede pedir cualquier usuario con sesión: es una protección de su propia
+// cuenta, no una tarea administrativa.
+app.post("/api/2fa/setup", authenticateToken, async (req, res) => {
   const fila = db.prepare("SELECT totp_habilitado FROM usuarios WHERE id = ?").get(req.user.id);
   if (fila?.totp_habilitado === 1) {
     return res.status(409).json({ error: "La verificación en dos pasos ya está activada" });
@@ -1119,19 +1116,22 @@ app.post("/api/2fa/setup", authenticateToken, requireTecnico, async (req, res) =
     qrDataUrl = await QRCode.toDataURL(otpauth, { margin: 1, width: 220, color: { dark: "#1f2937", light: "#ffffff" } });
   } catch { /* el QR es opcional; el secreto se puede ingresar a mano */ }
 
-  PENDIENTES_2FA.set(req.user.id, { secreto, otpauth, expira: Date.now() + DESAFIO_TTL_MS });
+  db.prepare(`
+    INSERT INTO pendientes_2fa (usuario_id, secreto, expira) VALUES (?, ?, ?)
+    ON CONFLICT(usuario_id) DO UPDATE SET secreto = excluded.secreto, expira = excluded.expira
+  `).run(req.user.id, secreto, Date.now() + DESAFIO_TTL_MS);
   registrarAuditoria(req, "2fa_configuracion_iniciada");
   res.json({ secreto, otpauthUrl: otpauth, qrDataUrl });
 });
 
 // Activa el 2FA tras verificar el código generado con el secreto pendiente.
-app.post("/api/2fa/verificar", authenticateToken, requireTecnico, sensiblesLimiter, (req, res) => {
+app.post("/api/2fa/verificar", authenticateToken, sensiblesLimiter, (req, res) => {
   const { codigo } = req.body || {};
   if (!codigo) return res.status(400).json({ error: "Falta el código de verificación" });
 
-  const pendiente = PENDIENTES_2FA.get(req.user.id);
+  const pendiente = db.prepare("SELECT secreto, expira FROM pendientes_2fa WHERE usuario_id = ?").get(req.user.id);
   if (!pendiente || pendiente.expira < Date.now()) {
-    PENDIENTES_2FA.delete(req.user.id);
+    db.prepare("DELETE FROM pendientes_2fa WHERE usuario_id = ?").run(req.user.id);
     return res.status(410).json({ error: "La configuración expiró. Vuelve a iniciarla." });
   }
   if (!verificarCodigo(pendiente.secreto, String(codigo))) {
@@ -1140,13 +1140,13 @@ app.post("/api/2fa/verificar", authenticateToken, requireTecnico, sensiblesLimit
 
   db.prepare("UPDATE usuarios SET totp_secreto = ?, totp_habilitado = 1 WHERE id = ?")
     .run(pendiente.secreto, req.user.id);
-  PENDIENTES_2FA.delete(req.user.id);
+  db.prepare("DELETE FROM pendientes_2fa WHERE usuario_id = ?").run(req.user.id);
   registrarAuditoria(req, "2fa_activada");
   res.json({ ok: true });
 });
 
 // Desactiva el 2FA (exige el código actual para confirmar).
-app.post("/api/2fa/desactivar", authenticateToken, requireTecnico, sensiblesLimiter, (req, res) => {
+app.post("/api/2fa/desactivar", authenticateToken, sensiblesLimiter, (req, res) => {
   const { codigo } = req.body || {};
   const fila = db.prepare("SELECT totp_secreto, totp_habilitado FROM usuarios WHERE id = ?").get(req.user.id);
   if (!fila || fila.totp_habilitado !== 1) {

@@ -1,6 +1,16 @@
 /* service-worker.js — caché offline: red para la API, caché para estáticos. */
 
 const CACHE_NAME = "labcontrol-v4.2.0";
+// Datos de inventario para poder consultarlos sin conexión. Solo se guardan
+// respuestas de lectura que NO son personales (laboratorios, equipos y su
+// inventario), de modo que en un equipo compartido nadie vea datos de la sesión
+// de otra persona. El resto de la API (usuarios, auditoría, agenda, reportes…)
+// nunca se cachea.
+const API_CACHE = "labcontrol-api-v4.2.0";
+const API_OFFLINE = [
+  /^api\/laboratorios(\/|$)/,
+  /^api\/equipos(\/|$)/
+];
 const PRECACHE_URLS = [
   "./",
   "index.html",
@@ -75,10 +85,18 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
-        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+        keys.filter((k) => k !== CACHE_NAME && k !== API_CACHE).map((k) => caches.delete(k))
       )
     ).then(() => self.clients.claim())
   );
+});
+
+// La página pide borrar la caché de datos al cerrar sesión (los datos de
+// inventario son institucionales, pero así no queda nada tras un logout).
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "limpiar-cache-api") {
+    event.waitUntil(caches.delete(API_CACHE));
+  }
 });
 
 // Intercepta peticiones
@@ -95,6 +113,32 @@ self.addEventListener("fetch", (event) => {
   const ruta = (base && url.pathname.startsWith(`${base}/`)
     ? url.pathname.slice(base.length)
     : url.pathname).replace(/^\/+/, "");
+
+  // Inventario (lectura, no personal): network-first con respaldo en caché para
+  // que sin conexión se sigan viendo laboratorios y equipos. Nunca se guarda
+  // nada con datos de usuario.
+  if (request.method === "GET" && API_OFFLINE.some((re) => re.test(ruta))) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === "basic") {
+            const clone = response.clone();
+            caches.open(API_CACHE).then((c) => c.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(request).then((r) =>
+            r || new Response(
+              JSON.stringify({ error: "Sin conexión. Se muestran los últimos datos guardados." }),
+              { status: 503, headers: { "Content-Type": "application/json" } }
+            )
+          )
+        )
+    );
+    return;
+  }
+
   if (ruta === "api" || ruta.startsWith("api/")) return;
   if (request.credentials === "include") return;
 

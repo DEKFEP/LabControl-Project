@@ -89,9 +89,12 @@ La IP real del profesor en la auditoría
   sin él, se sigue usando la IP del proxy.
 
 El backend está lejos de Chile
-  El servicio corre en una región de Estados Unidos. La latencia se nota en las primeras
-  peticiones. Se puede pedir otra región, pero cambiaría la dirección pública del backend y
-  habría que actualizarla en el puente del sitio.
+  El servicio corre en una región de Estados Unidos y la latencia se nota en las primeras
+  peticiones. Railway elige la región al crear el servicio y no la cambia en sitio: para
+  acercarlo hay que recrear el servicio (con su volumen de datos) en una región más próxima
+  a Chile y volver a apuntar API_ORIGIN, en el proyecto de Pages, a la dirección nueva. Queda
+  como acción de infraestructura pendiente en el panel de Railway (la API no se redespliega
+  desde el workflow más que para subir el código).
 
 El dominio propio todavía no está conectado
   El sitio se publica en una dirección de Cloudflare Pages. El dominio del proyecto ya
@@ -102,22 +105,25 @@ El dominio propio todavía no está conectado
   certificado sin costo. Mientras tanto, las direcciones canónicas y las de las redes
   sociales apuntan a la dirección de Pages.
 
-Los desafíos de la verificación en dos pasos viven en memoria
-  Mientras alguien está entre el paso de contraseña y el de código, ese estado queda en la
-  memoria del proceso. Si el servicio se reinicia en ese instante, la persona tiene que
-  volver a iniciar sesión. No afecta a las sesiones ya abiertas.
+Los desafíos de la verificación en dos pasos vivían en memoria
+  RESUELTO en 4.2. Los desafíos de login y las configuraciones a medias ahora se guardan en
+  la base (tablas desafios_2fa y pendientes_2fa, migración 11): un reinicio del servicio ya
+  no obliga a repetir el paso del código y el estado queda cubierto por el respaldo.
 
 Los avisos del sistema operativo dependen del navegador
   Las notificaciones cuando la pestaña está en segundo plano funcionan en los navegadores
   que lo soportan; en el resto solo se ven con la aplicación abierta.
 
-El sitio sin conexión es una copia de la interfaz
-  El service worker guarda los archivos estáticos, no los datos: sin conexión se puede
-  navegar, pero no crear ni modificar nada, y no se ven datos nuevos.
+El sitio sin conexión muestra la interfaz y el inventario
+  El service worker guarda los archivos estáticos y, además, las respuestas de solo lectura
+  del inventario (laboratorios y equipos), así que sin conexión se puede navegar y consultar
+  esos datos. Siguen sin poder crearse ni modificarse datos, no se ven datos nuevos y no se
+  guarda nada personal (usuarios, auditoría, agenda, reportes): en un equipo compartido nadie
+  ve la sesión de otro. Al cerrar sesión se borra lo guardado.
 
-Varios scripts siguen dentro de las páginas
-  La mayoría del código está en módulos externos, pero cada página todavía conserva algún
-  script embebido. Está anotado como deuda técnica.
+Los scripts ya están fuera de las páginas
+  RESUELTO. El código vive en módulos externos; las páginas solo referencian scripts con
+  `src` (se comprobó que no queda ningún `<script>` embebido ni manejador `on*=` en línea).
 
 
 5. DECISIONES DOCUMENTADAS (NO SE CAMBIAN)
@@ -126,8 +132,6 @@ Se revisaron y se dejan como están, con su motivo:
 
   - No hay captcha en el registro ni en la recuperación: el límite de peticiones cubre el
     abuso y el uso real es de unos pocos profesores.
-  - Los desafíos de verificación en dos pasos no se guardan en la base: son de un solo uso y
-    duran minutos.
   - La aplicación está reservada a personas adultas y se opera bajo la supervisión del
     establecimiento; así consta en los términos de uso y en la política de privacidad.
 
@@ -150,5 +154,8 @@ despliegue de 4.2:
   5. Definir API_ORIGIN en el proyecto de Pages apuntando a la API de Railway.
   6. Rotar la contraseña del administrador INSUCO: sus credenciales de ejemplo estuvieron
      en el código hasta 4.1.
+  7. Acercar el backend a Chile: crear el servicio (con su volumen) en una región próxima
+     y volver a apuntar API_ORIGIN a la dirección nueva (ver "El backend está lejos de
+     Chile", en la sección 4). No se puede desde el workflow: es una acción del panel.
 
 Referencia de todas las variables: website/backend/.env.example.
