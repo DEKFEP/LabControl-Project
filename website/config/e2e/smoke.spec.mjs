@@ -71,6 +71,46 @@ test("registro de cuenta propia: crea la cuenta, inicia sesión y llega al dashb
   await expect(page.locator(".sidebar__user")).toBeVisible();
 });
 
+test("notificación de nuevo profesor abre su ficha y permite otorgar el nivel (admin)", async ({ page }) => {
+  // 1) Una cuenta nueva se registra (genera la notificación para el admin).
+  await page.goto("/login.html");
+  await page.click("#btn-ir-registrar");
+  const sufijo = Date.now().toString().slice(-7);
+  const usuario = `prof_notif_${sufijo}`;
+  await page.fill("#reg-nombre", "Noti");
+  await page.fill("#reg-apellido", "Prueba");
+  await page.fill("#reg-usuario", usuario);
+  await page.fill("#reg-email", `noti${sufijo}@liceo.cl`);
+  await page.fill("#reg-area", "Historia");
+  await page.fill("#reg-pass", "Noti12345678");
+  await page.fill("#reg-pass2", "Noti12345678");
+  await page.check("#reg-terminos");
+  await page.click("#vista-registrar button[type=submit]");
+  await page.waitForURL("**/index.html");
+
+  // 2) El admin entra y abre la campana de notificaciones.
+  await page.click(".logout-btn");
+  await page.waitForURL("**/login.html");
+  await login(page, CRED.admin.user, CRED.admin.pass);
+  await page.click(".notif-btn");
+  const item = page.locator(".notif-item", { hasText: usuario });
+  await expect(item).toBeVisible({ timeout: 8000 });
+
+  // 3) Al pulsarla, abre Usuarios en la ficha del nuevo usuario.
+  await item.click();
+  await page.waitForURL(/usuarios\.html\?id=prof_notif_/);
+  await expect(page.locator("#vista-usr-detalle")).toBeVisible({ timeout: 8000 });
+  await expect(page.locator("#det-nombre")).toContainText("Noti");
+  await expect(page.locator("#det-nivel-control")).toBeVisible();
+  await expect(page.locator("#det-nivel-select")).toHaveValue("basico");
+
+  // 4) El admin le otorga acceso técnico, con confirmación.
+  page.on("dialog", (d) => d.accept());
+  await page.selectOption("#det-nivel-select", "tecnico");
+  await page.click("#btn-otorgar-nivel");
+  await expect(page.locator("#det-nivel-badge")).toContainText("Acceso técnico", { timeout: 8000 });
+});
+
 test("el formulario de recuperación responde de forma genérica", async ({ page }) => {
   await page.goto("/login.html");
   await page.click("#btn-ir-recuperar");

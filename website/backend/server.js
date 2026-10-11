@@ -532,6 +532,15 @@ function esTecnico(rol) {
   return rol === "admin" || rol === "programacion";
 }
 
+// La verificación en dos pasos solo la usan las cuentas con acceso técnico o de
+// administración; los roles con acceso básico no la configuran.
+function requireTecnico2FA(req, res, next) {
+  if (!esTecnico(req.user?.rol)) {
+    return res.status(403).json({ error: "La verificación en dos pasos solo está disponible para cuentas con acceso técnico o de administración" });
+  }
+  next();
+}
+
 function labFromRowVisible(row, req) {
   const lab = labFromRow(row);
   if (esTecnico(req.user?.rol)) return lab;
@@ -579,6 +588,7 @@ function notifFromRow(row) {
   return {
     id: row.id, usuarioId: row.usuario_id, tipo: row.tipo, titulo: row.titulo,
     mensaje: row.mensaje, reporteId: row.reporte_id, solicitudId: row.solicitud_id ?? null,
+    usuarioRef: row.usuario_ref ?? null,
     fecha: row.fecha, leida: !!row.leida
   };
 }
@@ -600,7 +610,7 @@ function nombreLab(labId) {
   return db.prepare("SELECT nombre FROM laboratorios WHERE id = ?").get(labId)?.nombre ?? "laboratorio";
 }
 
-function crearNotificacion({ toggle, tipo, titulo, mensaje, actorId = null, destinatario, referencia = null, solicitudId = null }) {
+function crearNotificacion({ toggle, tipo, titulo, mensaje, actorId = null, destinatario, referencia = null, solicitudId = null, usuarioRef = null }) {
   try {
     const cfg = JSON.parse(db.prepare("SELECT data FROM config WHERE id = 1").get()?.data || "{}");
     if (cfg.notificaciones?.[toggle] === false) return;
@@ -614,8 +624,8 @@ function crearNotificacion({ toggle, tipo, titulo, mensaje, actorId = null, dest
 
     const fecha = new Date().toISOString().slice(0, 10);
     db.prepare(`
-      INSERT INTO notificaciones (usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, fecha, leida)
-      VALUES (?,?,?,?,?,?,?,0)
+      INSERT INTO notificaciones (usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, usuario_ref, fecha, leida)
+      VALUES (?,?,?,?,?,?,?,?,0)
     `).run(
       destinatario,
       tipo ?? toggle,
@@ -623,6 +633,7 @@ function crearNotificacion({ toggle, tipo, titulo, mensaje, actorId = null, dest
       String(mensaje ?? "").replace(/\{quien\}/g, quien),
       referencia,
       solicitudId ?? null,
+      usuarioRef ?? null,
       fecha
     );
     // Cota por usuario: se conservan solo las 200 notificaciones recientes
@@ -1099,9 +1110,8 @@ app.get("/api/2fa/estado", authenticateToken, (req, res) => {
 });
 
 // Inicia la configuración: genera un secreto nuevo (no se activa hasta verificar).
-// Lo puede pedir cualquier usuario con sesión: es una protección de su propia
-// cuenta, no una tarea administrativa.
-app.post("/api/2fa/setup", authenticateToken, async (req, res) => {
+// Solo para cuentas con acceso técnico o de administración.
+app.post("/api/2fa/setup", authenticateToken, requireTecnico2FA, async (req, res) => {
   const fila = db.prepare("SELECT totp_habilitado FROM usuarios WHERE id = ?").get(req.user.id);
   if (fila?.totp_habilitado === 1) {
     return res.status(409).json({ error: "La verificación en dos pasos ya está activada" });
@@ -1125,7 +1135,7 @@ app.post("/api/2fa/setup", authenticateToken, async (req, res) => {
 });
 
 // Activa el 2FA tras verificar el código generado con el secreto pendiente.
-app.post("/api/2fa/verificar", authenticateToken, sensiblesLimiter, (req, res) => {
+app.post("/api/2fa/verificar", authenticateToken, requireTecnico2FA, sensiblesLimiter, (req, res) => {
   const { codigo } = req.body || {};
   if (!codigo) return res.status(400).json({ error: "Falta el código de verificación" });
 
@@ -1511,7 +1521,9 @@ app.post("/api/registro", [
     rol: "otro_area",
     area: sanitizarTexto(u.area, 100),
     especialidad: sanitizarTexto(u.especialidad, 200),
-    nivel_acceso: "basico"
+    // El nivel de acceso queda sin asignar: lo otorga el administrador desde la
+    // ficha del usuario (antes se asignaba "basico" automáticamente).
+    nivel_acceso: null
   });
 
   // Los administradores reciben una notificación con la cuenta nueva.
@@ -1521,8 +1533,9 @@ app.post("/api/registro", [
       toggle: "alertaNuevosUsuarios",
       tipo: "usuario_registrado",
       titulo: "Nuevo profesor registrado",
-      mensaje: `{quien} se registró en el sistema (${u.id}). Revisa sus datos: área "${u.area || "—"}", especialidad "${u.especialidad || "—"}".`,
+      mensaje: `{quien} se registró en el sistema (${u.id}). Abre la notificación para otorgarle el nivel de acceso.`,
       actorId: u.id,
+      usuarioRef: u.id,
       destinatario: a.id
     });
   }

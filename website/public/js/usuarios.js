@@ -1,6 +1,6 @@
 /* Imports (ES modules) */
 import { AUTH, actualizarUsuario, cargarUsuarios, crearUsuario, errorPassword } from "./data.js";
-import { abrirModal, cerrarModal, __activarTab, esc, initTabs, nivelLabel, renderSidebar, rolLabel, showToast } from "./app.js";
+import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, nivelLabel, renderSidebar, rolLabel, showToast } from "./app.js";
 
 
   renderSidebar("usuarios.html");
@@ -26,10 +26,17 @@ import { abrirModal, cerrarModal, __activarTab, esc, initTabs, nivelLabel, rende
   let usuariosCache = [];
   let detalleActualId = null;
 
+  // Al llegar desde una notificación (por ejemplo, "Nuevo profesor registrado")
+  // se abre directamente la ficha del usuario indicado en la URL.
+  const idInicial = getQueryParam("id");
+
   cargarUsuarios().then((usuarios) => {
     usuariosCache = usuarios;
     renderStats(usuarios);
     renderGrid(usuarios);
+    if (idInicial && usuarios.some((u) => String(u.id) === String(idInicial))) {
+      abrirDetalle(idInicial);
+    }
   }).catch(() => showToast("No se pudieron cargar los usuarios.", "error"));
 
   function volverAlListado() {
@@ -145,6 +152,14 @@ import { abrirModal, cerrarModal, __activarTab, esc, initTabs, nivelLabel, rende
     // Acciones admin
     const accionesEl = document.getElementById("det-acciones-admin");
     accionesEl.style.display = esAdmin ? "flex" : "none";
+
+    // Menú del nivel de acceso: solo el administrador lo otorga o lo cambia.
+    const nivelControl = document.getElementById("det-nivel-control");
+    if (nivelControl) {
+      nivelControl.style.display = esAdmin ? "block" : "none";
+      const selectNivel = document.getElementById("det-nivel-select");
+      if (esAdmin && selectNivel) selectNivel.value = u.nivelAcceso || "basico";
+    }
 
     // Ocultar pestañas restringidas según el rol del usuario en sesión
     const btnPermisos  = document.querySelector('.tab-btn[data-tab="det-permisos"]');
@@ -280,6 +295,30 @@ import { abrirModal, cerrarModal, __activarTab, esc, initTabs, nivelLabel, rende
     const u = usuariosCache.find((x) => x.id === detalleActualId);
     if (!u) { showToast("No se encontró el usuario.", "error"); return; }
     abrirEdicionUsuario(u);
+  });
+
+  // Otorgar o cambiar el nivel de acceso (solo administrador), con confirmación.
+  document.getElementById("btn-otorgar-nivel").addEventListener("click", () => {
+    const u = usuariosCache.find((x) => x.id === detalleActualId);
+    if (!u) { showToast("No se encontró el usuario.", "error"); return; }
+    const selectNivel = document.getElementById("det-nivel-select");
+    const nuevo = selectNivel.value;
+    if (nuevo === (u.nivelAcceso || "")) {
+      showToast("El usuario ya tiene ese nivel de acceso.", "error");
+      return;
+    }
+    const etiqueta = nivelLabel(nuevo);
+    if (!window.confirm(`¿Otorgar "${etiqueta}" a ${u.nombre} ${u.apellido}?`)) return;
+    actualizarUsuario(u.id, { nivelAcceso: nuevo })
+      .then(() => cargarUsuarios())
+      .then((usuarios) => {
+        usuariosCache = usuarios;
+        renderStats(usuarios);
+        renderGrid(usuarios);
+        abrirDetalle(u.id);
+        showToast(`Nivel de acceso actualizado a ${etiqueta}.`);
+      })
+      .catch((err) => showToast(err.message || "No se pudo cambiar el nivel de acceso.", "error"));
   });
 
   document.getElementById("btn-desactivar-usr").addEventListener("click", () => {
