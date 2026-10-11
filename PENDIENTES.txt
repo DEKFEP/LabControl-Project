@@ -137,9 +137,9 @@ Se revisaron y se dejan como están, con su motivo:
 La web se publica sola, pero la API y las variables dependen del panel. Para cerrar el
 despliegue de 4.2:
 
-  1. Activar en Railway el despliegue automático de la rama master (hoy está apagado),
-     para que la API tome el commit de 4.2. Si no, GET /api/salud sigue devolviendo la
-     versión anterior y el chequeo de versión del workflow falla.
+  1. La API ya se actualiza sola: el workflow la despliega con la CLI de Railway
+     (`railway up`), que sube website/backend con el commit actual. No hace falta activar
+     el despliegue automático en el panel de Railway.
   2. Definir el mismo LC_PROXY_SECRET en el servicio de Railway y en el proyecto de
      Cloudflare Pages.
   3. Definir LC_SALUD_TOKEN con el mismo valor en el servicio de Railway (que ya no revela
