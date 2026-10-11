@@ -1065,19 +1065,6 @@ export function podarTablas(conexion = db) {
   return total > 0 ? borradas : null;
 }
 
-// Obliga a volcar el journal al archivo principal: deja la BD consistente para
-// copiarla. Es idempotente y no falla si la base ya está cerrada.
-export function hacerCheckpoint() {
-  if (!db) return false;
-  try {
-    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    return true;
-  } catch (err) {
-    console.error("No se pudo volcar el journal a la base:", err?.message || err);
-    return false;
-  }
-}
-
 // En Windows, SQLite puede reportar "database is locked" o EPERM de forma
 // transitoria justo tras cerrar/reabrir la conexión. Se reintenta con una espera
 // real (no una espera activa), para no bloquear el event loop mientras se reintenta.
@@ -1171,13 +1158,11 @@ export async function reemplazarBaseDesdeBuffer(buffer) {
     // falla aquí, el sistema nunca se queda sin responder.
     const nueva = await reintentar(() => abrirConexion(temporal));
 
-    // Cerrar la conexión actual (ella misma elimina su journal; sin WAL no hay
-    // archivos -wal/-shm que queden colgando en Windows). `db` pasa a null antes
-    // de cerrar: si el intercambio de archivos falla más abajo, el bloque catch
-    // sabe que hay que reabrir, y no que ya hay una conexión sana en pie.
-    try {
-      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    } catch { /* el journal ya no está o la base está cerrándose */ }
+    // Cerrar la conexión actual (con journal DELETE cada transacción ya quedó
+    // volcada al archivo principal y no hay -wal/-shm que queden colgando en
+    // Windows). `db` pasa a null antes de cerrar: si el intercambio de archivos
+    // falla más abajo, el bloque catch sabe que hay que reabrir, y no que ya hay
+    // una conexión sana en pie.
     const anterior = db;
     db = null;
     anterior.close();

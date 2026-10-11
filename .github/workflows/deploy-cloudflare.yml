@@ -187,6 +187,12 @@ jobs:
           exit 1
 
       - name: Comprobar que la API soporta esta web
+        env:
+          # La API ya no revela su version a cualquiera (anti-fingerprinting): solo
+          # la devuelve si se presenta este token. Se guarda con
+          # 'gh secret set LC_SALUD_TOKEN' y debe coincidir con la variable
+          # LC_SALUD_TOKEN del servicio de Railway.
+          LC_SALUD_TOKEN: ${{ secrets.LC_SALUD_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -205,8 +211,16 @@ jobs:
           echo "Web $sitio. La ultima vez que se toco el backend fue en ${commit_api:0:7}, que declara la API $api_necesaria."
           [ -n "$api_necesaria" ] || { echo "::error::No se pudo leer la version de la API en el commit $commit_api."; exit 1; }
 
+          # La API responde `{ ok: true }` a cualquiera; servicio y version solo
+          # con el token. Si no hay token configurado no se puede comparar la
+          # version, asi que se avisa y se da la comprobacion por superada en vez
+          # de fallar por un motivo que no es del despliegue.
+          token_salud="$(printf '%s' "${LC_SALUD_TOKEN:-}" | tr -d '[:space:]')"
+          cabeceras=()
+          [ -n "$token_salud" ] && cabeceras=(-H "x-lc-salud-token: $token_salud")
+
           for intento in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            if salud="$(curl -fsS "https://$HOST/api/salud")"; then
+            if salud="$(curl -fsS ${cabeceras[@]+"${cabeceras[@]}"} "https://$HOST/api/salud")"; then
               echo "$salud"
               break
             fi
@@ -215,7 +229,13 @@ jobs:
           done
           [ -n "${salud:-}" ] || { echo "::error::La web subio, pero /api/salud no respondio tras 12 intentos."; exit 1; }
 
+          if [ -z "$token_salud" ]; then
+            echo "::notice::No hay LC_SALUD_TOKEN: /api/salud ya no publica la version (anti-fingerprinting), asi que no se compara. Define el secreto con 'gh secret set LC_SALUD_TOKEN' y la misma variable en el servicio de Railway para reactivar este chequeo."
+            exit 0
+          fi
+
           api="$(printf '%s' "$salud" | sed -n 's/.*"version":"\([0-9.]*\)".*/\1/p')"
+          [ -n "$api" ] || { echo "::error::/api/salud no devolvio la version: revisa que LC_SALUD_TOKEN coincida con el del servicio de Railway."; exit 1; }
 
           if [ "$api" = "$api_necesaria" ]; then
             echo "Web y API en la misma version ($api)."

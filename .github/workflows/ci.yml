@@ -56,4 +56,11 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Tests e2e
         working-directory: website/config
+        env:
+          # Credenciales de prueba fuera del código (ver e2e/smoke.spec.mjs). Si
+          # los secretos no existen quedan vacíos y la suite usa las cuentas demo.
+          LC_E2E_ADMIN_USER: ${{ vars.LC_E2E_ADMIN_USER }}
+          LC_E2E_ADMIN_PASS: ${{ secrets.LC_E2E_ADMIN_PASS }}
+          LC_E2E_CAMILA_PASS: ${{ secrets.LC_E2E_CAMILA_PASS }}
+          LC_E2E_JUAN_PASS: ${{ secrets.LC_E2E_JUAN_PASS }}
         run: npm run test:e2e

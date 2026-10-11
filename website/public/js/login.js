@@ -1,5 +1,5 @@
 /* Imports (ES modules) */
-import { AUTH } from "./data.js";
+import { AUTH, errorPassword } from "./data.js";
 
 // Si ya hay sesión activa, redirigir al inicio
 if (AUTH.getSesion()) {
@@ -137,7 +137,7 @@ registroForm.addEventListener("submit", async (e) => {
   if (nombre.length < 2 || apellido.length < 2) msg = "Ingresa tu nombre y apellido.";
   else if (!PATRON_USUARIO.test(usuario)) msg = "El usuario debe tener al menos 3 caracteres, con solo letras, números y guion bajo.";
   else if (!PATRON_EMAIL.test(email)) msg = "Ingresa un correo válido.";
-  else if (pass.length < 8) msg = "La contraseña debe tener al menos 8 caracteres.";
+  else if (errorPassword(pass)) msg = errorPassword(pass);
   else if (pass !== pass2) msg = "Las contraseñas no coinciden.";
   else if (!terminos) msg = "Debes aceptar los términos de uso y la política de privacidad para continuar.";
   if (msg) {
@@ -228,7 +228,7 @@ restablecerForm.addEventListener("submit", async (e) => {
   const pass = $("rec-pass").value;
   const pass2 = $("rec-pass2").value;
   let msg = null;
-  if (pass.length < 8) msg = "La contraseña debe tener al menos 8 caracteres.";
+  if (errorPassword(pass)) msg = errorPassword(pass);
   else if (pass !== pass2) msg = "Las contraseñas no coinciden.";
   if (msg) {
     mostrarBox(restablecerError, msg);

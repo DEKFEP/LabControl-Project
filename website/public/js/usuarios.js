@@ -1,5 +1,5 @@
 /* Imports (ES modules) */
-import { AUTH, actualizarUsuario, cargarUsuarios, crearUsuario } from "./data.js";
+import { AUTH, actualizarUsuario, cargarUsuarios, crearUsuario, errorPassword } from "./data.js";
 import { abrirModal, cerrarModal, __activarTab, esc, initTabs, nivelLabel, renderSidebar, rolLabel, showToast } from "./app.js";
 
 
@@ -248,7 +248,7 @@ import { abrirModal, cerrarModal, __activarTab, esc, initTabs, nivelLabel, rende
     inputId.disabled = editar;
     inputId.readOnly  = editar;
     inputPass.required = !editar;
-    inputPass.placeholder = editar ? "Dejar en blanco para no cambiar" : "Mínimo 8 caracteres";
+    inputPass.placeholder = editar ? "Dejar en blanco para no cambiar" : "Mínimo 10, con mayúscula y número";
     document.getElementById("usr-rol").value = editar ? "" : "programacion";
     document.getElementById("usr-nivel").value = editar ? "" : "basico";
     usuarioEditandoId = null;
@@ -328,7 +328,7 @@ import { abrirModal, cerrarModal, __activarTab, esc, initTabs, nivelLabel, rende
       if (apellido) cambios.apellido = apellido;
       if (email) cambios.email = email;
       if (pass) {
-        if (pass.length < 8) { showToast("La contraseña debe tener al menos 8 caracteres.", "error"); return; }
+        if (errorPassword(pass)) { showToast(errorPassword(pass), "error"); return; }
         cambios.password = pass;
       }
       cambios.area = area;
@@ -354,6 +354,7 @@ import { abrirModal, cerrarModal, __activarTab, esc, initTabs, nivelLabel, rende
       showToast("Completa todos los campos obligatorios.", "error");
       return;
     }
+    if (errorPassword(pass)) { showToast(errorPassword(pass), "error"); return; }
     const nuevo = {
       id, nombre, apellido,
       iniciales: `${nombre[0]}${apellido[0]}`.toUpperCase(),

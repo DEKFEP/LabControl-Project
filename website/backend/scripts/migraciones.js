@@ -70,8 +70,8 @@ switch (comando) {
     const forzar = banderas.has("--forzar");
 
     // Copia de seguridad previa: revertir migraciones puede eliminar tablas.
+    // Con journal DELETE (sin WAL) el archivo principal ya está consistente.
     const respaldo = path.join(DB_DIR, "labcontrol.db.prev-de-rollback");
-    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     fs.copyFileSync(DB_PATH, respaldo);
     console.log(`\n  Copia de seguridad previa: ${respaldo}`);
 

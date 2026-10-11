@@ -6,6 +6,20 @@
 // que el HTML que la está pidiendo.
 const API_BASE = "api";
 
+/* Política de contraseñas (misma que el servidor, en server.js): longitud mínima
+   10 y variedad (minúscula, mayúscula y número). Se usa para dar
+   retroalimentación inmediata; la API vuelve a validar. Devuelve el mensaje de
+   error o null. */
+export const MIN_PASSWORD = 10;
+export function errorPassword(pw) {
+  if (typeof pw !== "string" || pw.length === 0) return "La contraseña es obligatoria";
+  if (pw.length < MIN_PASSWORD) return `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres`;
+  if (!/[a-z]/.test(pw)) return "La contraseña debe incluir al menos una letra minúscula";
+  if (!/[A-Z]/.test(pw)) return "La contraseña debe incluir al menos una letra mayúscula";
+  if (!/[0-9]/.test(pw)) return "La contraseña debe incluir al menos un número";
+  return null;
+}
+
 /* Modo demo (respaldo sin servidor) */
 
 let MODO_DEMO = false;
@@ -208,6 +222,8 @@ function demoRequest(metodo, ruta, cuerpo) {
     }
 
     case "POST usuarios": {
+      const errAlta = errorPassword(String(cuerpo.password ?? ""));
+      if (errAlta) throw new Error(errAlta);
       const nuevo = {
         iniciales: `${(cuerpo.nombre?.[0] ?? "?")}${(cuerpo.apellido?.[0] ?? "")}`.toUpperCase(),
         activo: true,
@@ -221,6 +237,10 @@ function demoRequest(metodo, ruta, cuerpo) {
     case "PATCH usuarios_x": {
       const usr = D.usuarios.find((u) => u.id === id);
       if (!usr) throw new Error("Usuario no encontrado");
+      if (cuerpo.password !== undefined) {
+        const errEdit = errorPassword(String(cuerpo.password ?? ""));
+        if (errEdit) throw new Error(errEdit);
+      }
       Object.assign(usr, cuerpo);
       const { password, ...publico } = usr;
       return copia(publico);
@@ -452,7 +472,8 @@ function demoRequest(metodo, ruta, cuerpo) {
       const usr = D.usuarios.find((u) => u.id === sesion?.id);
       if (!usr) throw new Error("Usuario no encontrado");
       const nueva = String(cuerpo?.newPassword ?? "");
-      if (nueva.length < 8) throw new Error("La nueva contraseña debe tener al menos 8 caracteres");
+      const err = errorPassword(nueva);
+      if (err) throw new Error(err);
       // El modo demo no almacena contraseñas reales; el cambio es simbólico.
       return { ok: true };
     }
@@ -464,6 +485,8 @@ function demoRequest(metodo, ruta, cuerpo) {
       if (!/^[a-zA-Z0-9_]{1,80}$/.test(id)) throw new Error("El usuario solo puede contener letras, números y guion bajo");
       if (D.usuarios.some((x) => x.id === id)) throw new Error("Ya existe una cuenta con ese usuario");
       if (D.usuarios.some((x) => String(x.email).toLowerCase() === email)) throw new Error("El correo ya está en uso por otra cuenta");
+      const errPass = errorPassword(String(u.password ?? ""));
+      if (errPass) throw new Error(errPass);
       const nuevo = {
         id,
         nombre: String(u.nombre ?? ""),
@@ -503,7 +526,8 @@ function demoRequest(metodo, ruta, cuerpo) {
       const usr = D.usuarios.find((x) => x.id === uid && String(id) === "demo_reset_token");
       if (!usr) throw new Error("El enlace de restablecimiento es inválido o expiró");
       const pass = String(cuerpo?.newPassword ?? "");
-      if (pass.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres");
+      const errReset = errorPassword(pass);
+      if (errReset) throw new Error(errReset);
       usr.password = pass;
       try { sessionStorage.removeItem("lc_reset_demo"); } catch { /* sin almacenamiento */ }
       return { ok: true, usuario: usr.id };
