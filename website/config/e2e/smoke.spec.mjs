@@ -53,7 +53,7 @@ test("configuracion.html muestra la versión vigente", async ({ page }) => {
   await expect(panel).toContainText("Total equipos");
 });
 
-test("registro de cuenta propia: crea la cuenta, inicia sesión y llega al dashboard", async ({ page }) => {
+test("registro de cuenta propia: la cuenta queda pendiente de aprobación", async ({ page }) => {
   await page.goto("/login.html");
   await page.click("#btn-ir-registrar");
   const sufijo = Date.now().toString().slice(-6);
@@ -67,8 +67,10 @@ test("registro de cuenta propia: crea la cuenta, inicia sesión y llega al dashb
   await page.fill("#reg-pass2", "Estela12345");
   await page.check("#reg-terminos");
   await page.click("#vista-registrar button[type=submit]");
-  await page.waitForURL("**/index.html");
-  await expect(page.locator(".sidebar__user")).toBeVisible();
+  // No se inicia sesión sola: se muestra el aviso de que un administrador debe aprobarla.
+  await expect(page.locator("#registro-ok")).toBeVisible({ timeout: 8000 });
+  await expect(page.locator("#registro-ok")).toContainText("aprobación");
+  await expect(page).toHaveURL(/login\.html/);
 });
 
 test("notificación de nuevo profesor abre su ficha y permite otorgar el nivel (admin)", async ({ page }) => {
@@ -86,11 +88,9 @@ test("notificación de nuevo profesor abre su ficha y permite otorgar el nivel (
   await page.fill("#reg-pass2", "Noti12345678");
   await page.check("#reg-terminos");
   await page.click("#vista-registrar button[type=submit]");
-  await page.waitForURL("**/index.html");
+  await expect(page.locator("#registro-ok")).toBeVisible({ timeout: 8000 });
 
   // 2) El admin entra y abre la campana de notificaciones.
-  await page.click(".logout-btn");
-  await page.waitForURL("**/login.html");
   await login(page, CRED.admin.user, CRED.admin.pass);
   await page.click(".notif-btn");
   const item = page.locator(".notif-item", { hasText: usuario });

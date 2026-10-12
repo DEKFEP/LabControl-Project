@@ -12,6 +12,9 @@ beforeAll(async () => {
   // sus datos): hay que pedirla explícitamente, porque en producción está
   // desactivada por defecto.
   process.env.LC_SEED_DEMO = "1";
+  // Dominios admitidos en el registro público de la suite (se registran cuentas
+  // @liceo.cl). Sin esta variable el registro estaría cerrado.
+  process.env.LC_REGISTRO_DOMINIOS = "liceo.cl";
   // La suite completa supera los topes pensados para producción (200 peticiones
   // cada 15 minutos, 10 inicios de sesión por cuenta). Al crecer la suite, las
   // pruebas del final recibían 429 del propio rate limiting y fallaban por un
@@ -866,26 +869,47 @@ test("backups: restaurar un respaldo válido deja la API operativa y sin tempora
 
 /* ===== Registro autónomo y recuperación de contraseña ===== */
 
-test("registro: crea cuenta con rol otro_area, sin password y permite iniciar sesión", async () => {
+test("registro: crea la cuenta pendiente de aprobación (inactiva) y no permite entrar sin aprobarla", async () => {
   const res = await request(app)
     .post("/api/registro")
     .send({ id: "prof_prueba", nombre: "Prueba", apellido: "Registro", email: "prueba@liceo.cl", password: "Prueba12345", area: "Matemáticas", especialidad: "Cálculo" });
   expect(res.status).toBe(201);
-  expect(res.body.rol).toBe("otro_area");
+  expect(res.body.mensaje).toMatch(/aprobaci/i);
+  expect(res.body.usuario.rol).toBe("otro_area");
   // El nivel de acceso no se asigna solo: lo otorga el admin.
-  expect(res.body.nivelAcceso).toBeNull();
-  expect(res.body.iniciales).toBe("PR");
-  expect(res.body.password).toBeUndefined();
+  expect(res.body.usuario.nivelAcceso).toBeNull();
+  expect(res.body.usuario.iniciales).toBe("PR");
+  expect(res.body.usuario.password).toBeUndefined();
+  // La cuenta nace inactiva: todavía no puede iniciar sesión.
+  expect(res.body.usuario.activo).toBe(false);
 
-  const loginNuevo = await request(app).post("/api/login").send({ usuario: "prof_prueba", password: "Prueba12345" });
-  expect(loginNuevo.status).toBe(200);
-  expect(loginNuevo.body.token).toBeTruthy();
+  const loginPendiente = await request(app).post("/api/login").send({ usuario: "prof_prueba", password: "Prueba12345" });
+  expect(loginPendiente.status).toBe(401);
 
   // El admin recibe la notificación de la cuenta nueva, enlazada al usuario.
   const notifs = await request(app).get("/api/notificaciones").set("Authorization", `Bearer ${await login()}`);
   const notif = notifs.body.find((n) => n.tipo === "usuario_registrado" && /prof_prueba/.test(n.mensaje));
   expect(notif).toBeTruthy();
   expect(notif.usuarioRef).toBe("prof_prueba");
+
+  // Tras aprobarla (activarla) el admin ya puede entrar con sus credenciales.
+  const activar = await request(app)
+    .patch("/api/usuarios/prof_prueba")
+    .set("Authorization", `Bearer ${await login()}`)
+    .send({ activo: true });
+  expect(activar.status).toBe(200);
+
+  const loginAprobado = await request(app).post("/api/login").send({ usuario: "prof_prueba", password: "Prueba12345" });
+  expect(loginAprobado.status).toBe(200);
+  expect(loginAprobado.body.token).toBeTruthy();
+});
+
+test("registro: rechaza un dominio no admitido con 403", async () => {
+  const res = await request(app)
+    .post("/api/registro")
+    .send({ id: "prof_externo", nombre: "Externo", apellido: "Test", email: "externo@gmail.com", password: "Clave12345" });
+  expect(res.status).toBe(403);
+  expect(res.body.error).toMatch(/@liceo\.cl/);
 });
 
 test("registro: rechaza usuario o correo duplicado y datos inválidos", async () => {
