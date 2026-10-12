@@ -527,15 +527,26 @@ function puedeVerEmail(req, row) {
   return req.user?.rol === "admin" || String(req.user?.id) === String(row.id);
 }
 
-// Roles con permiso para ver datos técnicos (hardware / red)
-function esTecnico(rol) {
-  return rol === "admin" || rol === "programacion";
+// Nivel de acceso efectivo del solicitante (lo otorga el admin). Quien no lo
+// tenga asignado se trata como básico.
+function nivelAccesoDe(req) {
+  return String(req.user?.nivelAcceso || "basico");
+}
+
+// ¿Puede ver datos técnicos (hardware / red) y usar las funciones técnicas?
+// El rol admin manda; para el resto lo determina `nivelAcceso`, no el rol: un
+// profesor de programación con acceso básico no ve el hardware, y uno de otra
+// área con acceso técnico sí. Antes solo miraba el rol y el nivel quedaba sin uso.
+function esTecnico(req) {
+  return req.user?.rol === "admin"
+    || nivelAccesoDe(req) === "tecnico"
+    || nivelAccesoDe(req) === "total";
 }
 
 // La verificación en dos pasos solo la usan las cuentas con acceso técnico o de
 // administración; los roles con acceso básico no la configuran.
 function requireTecnico2FA(req, res, next) {
-  if (!esTecnico(req.user?.rol)) {
+  if (!esTecnico(req)) {
     return res.status(403).json({ error: "La verificación en dos pasos solo está disponible para cuentas con acceso técnico o de administración" });
   }
   next();
@@ -543,7 +554,7 @@ function requireTecnico2FA(req, res, next) {
 
 function labFromRowVisible(row, req) {
   const lab = labFromRow(row);
-  if (esTecnico(req.user?.rol)) return lab;
+  if (esTecnico(req)) return lab;
   const { so, procesador, ram, almacenamiento, red, ...visible } = lab;
   void so; void procesador; void ram; void almacenamiento; void red;
   return visible;
@@ -551,7 +562,7 @@ function labFromRowVisible(row, req) {
 
 function eqFromRowVisible(row, req) {
   const eq = eqFromRow(row);
-  if (esTecnico(req.user?.rol)) return eq;
+  if (esTecnico(req)) return eq;
   const { procesador, ram, almacenamiento, so, serie, ip, mac, ...visible } = eq;
   void procesador; void ram; void almacenamiento; void so; void serie; void ip; void mac;
   return visible;
@@ -1564,7 +1575,7 @@ app.patch("/api/laboratorios/:id", authenticateToken, (req, res) => {
   if (!campos.includes("estado")) {
     return res.status(400).json({ error: "Estado inválido" });
   }
-  if (campos.some((k) => k !== "estado") && !esTecnico(req.user?.rol)) {
+  if (campos.some((k) => k !== "estado") && !esTecnico(req)) {
     return res.status(403).json({ error: "Se requieren permisos técnicos para modificar otros campos" });
   }
   // Esta ruta solo escribe `estado`. Antes, un técnico que enviara además `nombre` o
@@ -1877,7 +1888,7 @@ app.delete("/api/agenda/:id", authenticateToken, (req, res) => {
 app.get("/api/reportes", authenticateToken, (req, res) => {
   // Solo los roles técnicos (admin/programación) ven el listado completo; el
   // resto únicamente sus propios reportes, igual que en el resto de listados.
-  const rows = esTecnico(req.user?.rol)
+  const rows = esTecnico(req)
     ? db.prepare("SELECT * FROM reportes ORDER BY fecha DESC").all()
     : db.prepare("SELECT * FROM reportes WHERE generado_por = ? ORDER BY fecha DESC").all(req.user.id);
   responderLista(req, res, rows.map(repFromRow));
@@ -1891,7 +1902,7 @@ app.post("/api/reportes", authenticateToken, [
 ], (req, res) => {
   // Crear reportes es una tarea técnica: se exige el mismo perfil que ve la
   // sección completa (admin o programación).
-  if (!esTecnico(req.user?.rol)) {
+  if (!esTecnico(req)) {
     return res.status(403).json({ error: "Solo el administrador o los profesores de programación pueden crear reportes" });
   }
   const errors = validationResult(req);

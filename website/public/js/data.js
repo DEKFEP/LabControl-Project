@@ -996,14 +996,20 @@ export const AUTH = {
     return sesion;
   },
 
+  // Acceso técnico: el admin siempre lo tiene; para el resto lo determina el
+  // nivel de acceso (tecnico/total) que otorga el administrador, no el rol. Un
+  // profesor de programación con acceso básico no ve el hardware.
+  tieneAccesoTecnico(sesion) {
+    const s = sesion || this.getSesion();
+    return !!s && (s.rol === "admin" || s.nivelAcceso === "tecnico" || s.nivelAcceso === "total");
+  },
+
   puedeVerTecnico() {
-    const s = this.getSesion();
-    return s && (s.rol === "admin" || s.rol === "programacion");
+    return this.tieneAccesoTecnico();
   },
 
   puedeControlRemoto() {
-    const s = this.getSesion();
-    return s && (s.rol === "admin" || s.rol === "programacion");
+    return this.tieneAccesoTecnico();
   },
 
   esAdmin() {
