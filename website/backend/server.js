@@ -1179,7 +1179,7 @@ app.post("/api/login/2fa", loginLimiter, (req, res) => {
 app.get("/api/salud", (req, res) => {
   const detallado = SALUD_TOKEN && igualSeguro(String(req.headers["x-lc-salud-token"] || ""), SALUD_TOKEN);
   res.json(detallado
-    ? { ok: true, servicio: "labcontrol-api", version: "4.2" }
+    ? { ok: true, servicio: "labcontrol-api", version: "4.3" }
     : { ok: true });
 });
 
@@ -2302,7 +2302,7 @@ app.use((err, req, res, next) => {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const servidor = app.listen(PORT, () => {
-    console.log(`\n  LabControl Liceo v4.2`);
+    console.log(`\n  LabControl Liceo v4.3`);
     if (sitioDentro) {
       console.log(`  API + sitio corriendo en: http://localhost:${PORT}/login.html`);
     } else {
