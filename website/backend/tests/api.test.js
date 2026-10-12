@@ -1424,3 +1424,22 @@ test("adjuntos: el listado no trae el base64 y el detalle lo sirve recién al ab
     .set("Authorization", `Bearer ${ajeno.body.token}`);
   expect(prohibido.status).toBe(403);
 });
+
+test("notificaciones: un cambio alcanza a todos los activos excepto al actor (fan-out)", async () => {
+  const token = await login();
+  const activos = await conBD((cone) =>
+    cone.prepare("SELECT COUNT(*) AS n FROM usuarios WHERE activo = 1").get().n);
+
+  const creado = await request(app)
+    .post("/api/reportes")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ tipo: "fallas", titulo: "Falla para el fan-out", descripcion: "Se avisa a todos los activos" });
+  expect(creado.status).toBe(201);
+
+  const crit = await conBD((cone) => ({
+    total: cone.prepare("SELECT COUNT(*) AS n FROM notificaciones WHERE reporte_id = ? AND tipo = 'creado'").get(creado.body.id).n,
+    actor: cone.prepare("SELECT COUNT(*) AS n FROM notificaciones WHERE reporte_id = ? AND usuario_id = 'INSUCO'").get(creado.body.id).n
+  }));
+  expect(crit.total).toBe(activos - 1);
+  expect(crit.actor).toBe(0);
+});

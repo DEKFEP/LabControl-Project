@@ -642,11 +642,15 @@ function nombreLab(labId) {
   return db.prepare("SELECT nombre FROM laboratorios WHERE id = ?").get(labId)?.nombre ?? "laboratorio";
 }
 
-function crearNotificacion({ toggle, tipo, titulo, mensaje, actorId = null, destinatario, referencia = null, solicitudId = null, usuarioRef = null }) {
+// Prepara una notificación: comprueba el interruptor global, resuelve el nombre
+// del actor y deja el mensaje listo para insertar. Lo comparten la creación
+// individual y el fan-out (notificarATodos), que así hace estas lecturas una
+// sola vez en lugar de una vez por destinatario.
+function prepararRegistroNotificacion({ toggle, tipo, titulo, mensaje, actorId = null, referencia = null, solicitudId = null, usuarioRef = null }) {
   try {
     const cfg = JSON.parse(db.prepare("SELECT data FROM config WHERE id = 1").get()?.data || "{}");
-    if (cfg.notificaciones?.[toggle] === false) return;
-    if (!titulo || !destinatario) return;
+    if (cfg.notificaciones?.[toggle] === false) return null;
+    if (!titulo) return null;
 
     let quien = "Alguien";
     if (actorId != null) {
@@ -654,19 +658,32 @@ function crearNotificacion({ toggle, tipo, titulo, mensaje, actorId = null, dest
       if (actor) quien = `${actor.nombre} ${actor.apellido}`;
     }
 
-    const fecha = new Date().toISOString().slice(0, 10);
+    return {
+      tipo: tipo ?? toggle,
+      titulo: String(titulo),
+      mensaje: String(mensaje ?? ""),
+      quien,
+      referencia,
+      solicitudId: solicitudId ?? null,
+      usuarioRef: usuarioRef ?? null,
+      fecha: new Date().toISOString().slice(0, 10)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function crearNotificacion({ destinatario, ...opciones }) {
+  try {
+    const registro = prepararRegistroNotificacion(opciones);
+    if (!registro || !destinatario) return;
     db.prepare(`
       INSERT INTO notificaciones (usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, usuario_ref, fecha, leida)
       VALUES (?,?,?,?,?,?,?,?,0)
     `).run(
-      destinatario,
-      tipo ?? toggle,
-      String(titulo),
-      String(mensaje ?? "").replace(/\{quien\}/g, quien),
-      referencia,
-      solicitudId ?? null,
-      usuarioRef ?? null,
-      fecha
+      destinatario, registro.tipo, registro.titulo,
+      registro.mensaje.replace(/\{quien\}/g, registro.quien),
+      registro.referencia, registro.solicitudId, registro.usuarioRef, registro.fecha
     );
     // Cota por usuario: se conservan solo las 200 notificaciones recientes
     // (la interfaz muestra a lo sumo 50), evitando acumulación indefinida.
@@ -745,10 +762,41 @@ alRestaurar(() => {
 setInterval(limpiarDesafiosVencidos, 5 * 60 * 1000).unref?.();
 
 function notificarATodos(opciones) {
+  let destinatarios;
   try {
-    const destinatarios = db.prepare("SELECT id FROM usuarios WHERE activo = 1 AND id != ?").all(opciones.actorId ?? "");
-    for (const d of destinatarios) crearNotificacion({ ...opciones, destinatario: d.id });
+    destinatarios = db.prepare("SELECT id FROM usuarios WHERE activo = 1 AND id != ?").all(opciones.actorId ?? "").map((u) => u.id);
   } catch (e) {
+    console.error("No se pudo registrar la notificación:", e.message);
+    return;
+  }
+  if (!destinatarios.length) return;
+
+  const registro = prepararRegistroNotificacion(opciones);
+  if (!registro) return;
+
+  // Fan-out: un solo cambio alcanza a todos los activos. El lote completo viaja
+  // en una transacción (un INSERT y su poda por usuario) en lugar de N llamadas
+  // independientes a crearNotificacion, cada una con sus propias lecturas.
+  db.exec("BEGIN");
+  try {
+    const insertar = db.prepare(`
+      INSERT INTO notificaciones (usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, usuario_ref, fecha, leida)
+      VALUES (?,?,?,?,?,?,?,?,0)
+    `);
+    const podar = db.prepare(`
+      DELETE FROM notificaciones
+      WHERE usuario_id = ?
+        AND id NOT IN (SELECT id FROM notificaciones WHERE usuario_id = ? ORDER BY id DESC LIMIT 200)
+    `);
+    const mensaje = registro.mensaje.replace(/\{quien\}/g, registro.quien);
+    for (const destinatario of destinatarios) {
+      insertar.run(destinatario, registro.tipo, registro.titulo, mensaje,
+        registro.referencia, registro.solicitudId, registro.usuarioRef, registro.fecha);
+      podar.run(destinatario, destinatario);
+    }
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
     console.error("No se pudo registrar la notificación:", e.message);
   }
 }
