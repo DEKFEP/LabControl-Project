@@ -215,12 +215,16 @@ const generalLimiter = rateLimit({
 });
 app.use("/api/", generalLimiter);
 
-// Rate limiting adicional en rutas de escritura (evita abusos de creación/PATCH/borrado)
+// Rate limiting adicional en rutas de escritura (evita abusos de creación/PATCH/
+// borrado). Solo cuenta los métodos de escritura: antes también contaba los GET,
+// así que el sondeo de notificaciones y las lecturas de esas rutas consumían la
+// cuota de escritura sin motivo. Las lecturas quedan cubiertas por generalLimiter.
 const escrituraLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: process.env.LC_ESCRITURA_LIMIT ? Number(process.env.LC_ESCRITURA_LIMIT) : 60,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS",
   message: { error: "Demasiadas solicitudes. Intenta de nuevo en 1 minuto." }
 });
 app.use(["/api/usuarios", "/api/agenda", "/api/reportes", "/api/config", "/api/notificaciones", "/api/laboratorios", "/api/solicitudes-especialidad"], escrituraLimiter);
