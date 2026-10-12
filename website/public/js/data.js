@@ -247,6 +247,17 @@ function demoRequest(metodo, ruta, cuerpo) {
       return copia(publico);
     }
 
+    case "DELETE usuarios_x": {
+      const i = D.usuarios.findIndex((u) => u.id === id);
+      if (i === -1) throw new Error("Usuario no encontrado");
+      if (id === AUTH.getSesion()?.id) throw new Error("No puedes eliminar tu propio usuario");
+      // Desvincular reportes y solicitudes resueltas (equivalente al backend).
+      D.reportes.forEach((r) => { if (r.generadoPor === id) r.generadoPor = null; });
+      D.solicitudes.forEach((s) => { if (s.resueltaPor === id) s.resueltaPor = null; });
+      D.usuarios.splice(i, 1);
+      return null;
+    }
+
     case "GET agenda":
       return copia(D.agenda);
 
@@ -638,6 +649,11 @@ async function pedir(ruta, opciones = {}, _reintentado = false) {
         throw new Error(err.error || "No autorizado. Inicia sesión nuevamente.");
       }
 
+      // 204 = éxito sin cuerpo (p. ej. eliminar usuario/reserva/reporte). No trae
+      // Content-Type, así que hay que resolverlo antes de la comprobación de
+      // "contenido inesperado", que si no lo confunde con una respuesta rota.
+      if (res.status === 204) return null;
+
       const tipo = res.headers.get("content-type") ?? "";
       if (!tipo.includes("json")) {
         // 404/405 con HTML: en este origen no hay ninguna API montada (host
@@ -656,7 +672,7 @@ async function pedir(ruta, opciones = {}, _reintentado = false) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `${ruta} → ${res.status}`);
       }
-      return res.status === 204 ? null : res.json();
+      return res.json();
     } catch (err) {
       // Solo un fallo de red (TypeError) justifica el respaldo local.
       if (!(err instanceof TypeError)) throw err;
@@ -741,6 +757,10 @@ export function crearUsuario(usuario) {
 
 export function actualizarUsuario(id, cambios) {
   return apiSend("PATCH", `/usuarios/${id}`, cambios);
+}
+
+export function eliminarUsuario(id) {
+  return apiSend("DELETE", `/usuarios/${id}`);
 }
 
 /* Agenda / reservas */

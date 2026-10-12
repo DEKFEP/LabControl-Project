@@ -509,7 +509,7 @@ function buildPanel(id) {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
           <div class="cfg-sys-card">
             <div class="cfg-sys-card__label">Versión del sistema</div>
-            <div class="cfg-sys-card__value">LabControl v4.2.1</div>
+            <div class="cfg-sys-card__value">LabControl v4.2.2</div>
           </div>
           <div class="cfg-sys-card">
             <div class="cfg-sys-card__label">Total laboratorios</div>
@@ -959,7 +959,7 @@ function contenidoAcerca() {
       <div style="font-size:.85rem;color:var(--color-text-muted)">Sistema de control y supervisión de los laboratorios de computación del liceo.</div>
       <div class="cfg-sys-card" style="margin:18px auto 0;max-width:260px">
         <div class="cfg-sys-card__label">Versión del sistema</div>
-        <div class="cfg-sys-card__value">LabControl v4.2.1</div>
+        <div class="cfg-sys-card__value">LabControl v4.2.2</div>
       </div>
       <div class="cfg-sys-card" style="margin:10px auto 0;max-width:260px">
         <div class="cfg-sys-card__label">Institución</div>
@@ -1197,6 +1197,7 @@ const ACCIONES_LEGIBLE = {
   laboratorio_estado_cambiado: "Estado de laboratorio",
   usuario_creado: "Usuario creado",
   usuario_editado: "Usuario modificado",
+  usuario_eliminado: "Usuario eliminado",
   reserva_creada: "Reserva creada",
   reserva_cancelada: "Reserva cancelada",
   configuracion_actualizada: "Configuración actualizada",

@@ -108,6 +108,17 @@ async function restaurarPassword(usuarioId, hash) {
   cone.close();
 }
 
+// Consulta directa a la base para verificar efectos que la API no expone.
+async function conBD(fn) {
+  const { abrirConexion } = await import(`../db.js?v=${Date.now()}`);
+  const cone = await abrirConexion();
+  try {
+    return fn(cone);
+  } finally {
+    cone.close();
+  }
+}
+
 test("autenticación: rechaza credenciales incorrectas (401)", async () => {
   const res = await request(app).post("/api/login").send({ usuario: "INSUCO", password: "incorrecta" });
   expect(res.status).toBe(401);
@@ -949,6 +960,65 @@ test("seguridad: cambiar el rol de un usuario surte efecto inmediato (deja de se
   // El JWT aún dice admin, pero la base manda: ya no accede al panel de admin.
   const degradado = await request(app).get("/api/auditoria").set("Authorization", `Bearer ${sesion.token}`);
   expect(degradado.status).toBe(403);
+});
+
+test("usuarios: el admin elimina una cuenta y desaparece del padrón", async () => {
+  const tokenAdmin = await login();
+  const alta = await request(app).post("/api/usuarios").set("Authorization", `Bearer ${tokenAdmin}`).send({
+    id: "prof_elim", nombre: "Profesor", apellido: "Eliminar", email: "elim@liceo.cl", password: "claveSegura1"
+  });
+  expect(alta.status).toBe(201);
+
+  // Un no-admin no puede eliminar (403).
+  const prohibido = await request(app)
+    .delete("/api/usuarios/prof_elim")
+    .set("Authorization", `Bearer ${await loginCamila()}`);
+  expect(prohibido.status).toBe(403);
+
+  // El admin elimina la cuenta (204) y deja de existir.
+  const baja = await request(app)
+    .delete("/api/usuarios/prof_elim")
+    .set("Authorization", `Bearer ${tokenAdmin}`);
+  expect(baja.status).toBe(204);
+  const buscar = await request(app)
+    .get("/api/usuarios/prof_elim")
+    .set("Authorization", `Bearer ${tokenAdmin}`);
+  expect(buscar.status).toBe(404);
+
+  // Eliminar dos veces la misma cuenta ya no la encuentra.
+  const repetida = await request(app)
+    .delete("/api/usuarios/prof_elim")
+    .set("Authorization", `Bearer ${tokenAdmin}`);
+  expect(repetida.status).toBe(404);
+});
+
+test("usuarios: no se puede eliminar la propia cuenta", async () => {
+  const propio = await request(app)
+    .delete("/api/usuarios/INSUCO")
+    .set("Authorization", `Bearer ${await login()}`);
+  expect(propio.status).toBe(400);
+});
+
+test("usuarios: eliminar una cuenta desvincula sus reportes sin romper la clave foránea", async () => {
+  const tokenAdmin = await login();
+  await request(app).post("/api/usuarios").set("Authorization", `Bearer ${tokenAdmin}`).send({
+    id: "prof_elim_rep", nombre: "Autor", apellido: "Eliminado", email: "autor.elim@liceo.cl",
+    password: "claveSegura1", rol: "programacion"
+  });
+  await conBD((cone) => {
+    cone.prepare("INSERT INTO reportes (id, tipo, titulo, fecha, generado_por, datos) VALUES (?,?,?,?,?,?)")
+      .run("rep_elim", "uso", "Reporte del eliminado", "2026-08-01", "prof_elim_rep", "{}");
+  });
+
+  const baja = await request(app)
+    .delete("/api/usuarios/prof_elim_rep")
+    .set("Authorization", `Bearer ${tokenAdmin}`);
+  expect(baja.status).toBe(204);
+
+  const autor = await conBD((cone) =>
+    cone.prepare("SELECT generado_por FROM reportes WHERE id = ?").get("rep_elim")
+  );
+  expect(autor.generado_por).toBeNull();
 });
 
 test("seguridad: reutilizar un refresh token rotado revoca toda la familia de sesiones", async () => {

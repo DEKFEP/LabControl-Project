@@ -111,6 +111,57 @@ test("notificación de nuevo profesor abre su ficha y permite otorgar el nivel (
   await expect(page.locator("#det-nivel-badge")).toContainText("Acceso técnico", { timeout: 8000 });
 });
 
+test("usuarios: el admin desactiva, reactiva y elimina una cuenta", async ({ page }) => {
+  await login(page, CRED.admin.user, CRED.admin.pass);
+  const sufijo = Date.now().toString().slice(-7);
+  const usuario = `prof_baja_${sufijo}`;
+
+  // Se crea una cuenta temporal (admin).
+  await page.goto("/usuarios.html");
+  await page.click("#btn-nuevo-usuario");
+  await page.fill("#usr-nombre", "Temporal");
+  await page.fill("#usr-apellido", "Baja");
+  await page.fill("#usr-email", `temp${sufijo}@liceo.cl`);
+  await page.fill("#usr-id", usuario);
+  await page.fill("#usr-pass", "Temp12345678");
+  await page.fill("#usr-area", "Historia");
+  await page.click("#btn-guardar-usr");
+
+  const detalle = page.locator("#vista-usr-detalle");
+  const grid = page.locator("#usr-grid");
+
+  // Cuenta activa: el botón dice "Desactivar".
+  await page.goto(`/usuarios.html?id=${usuario}`);
+  await expect(detalle).toBeVisible({ timeout: 8000 });
+  await expect(page.locator("#btn-desactivar-usr")).toHaveText("Desactivar");
+
+  // Desactivar: vuelve al listado.
+  page.once("dialog", (d) => d.accept());
+  await page.click("#btn-desactivar-usr");
+  await expect(grid).toBeVisible({ timeout: 8000 });
+
+  // Al reabrir la ficha, figura inactivo y el botón cambia a "Activar".
+  await page.goto(`/usuarios.html?id=${usuario}`);
+  await expect(detalle).toBeVisible({ timeout: 8000 });
+  await expect(page.locator("#btn-desactivar-usr")).toHaveText("Activar");
+  await expect(page.locator("#det-info-grid")).toContainText("Inactivo");
+
+  // Reactivar: el botón vuelve a "Desactivar".
+  page.once("dialog", (d) => d.accept());
+  await page.click("#btn-desactivar-usr");
+  await expect(grid).toBeVisible({ timeout: 8000 });
+  await page.goto(`/usuarios.html?id=${usuario}`);
+  await expect(page.locator("#btn-desactivar-usr")).toHaveText("Desactivar");
+
+  // Eliminar: la cuenta desaparece y no se puede volver a abrir su ficha.
+  page.once("dialog", (d) => d.accept());
+  await page.click("#btn-eliminar-usr");
+  await expect(grid).toBeVisible({ timeout: 8000 });
+  await page.goto(`/usuarios.html?id=${usuario}`);
+  await expect(grid).toBeVisible({ timeout: 8000 });
+  await expect(detalle).toBeHidden();
+});
+
 test("el formulario de recuperación responde de forma genérica", async ({ page }) => {
   await page.goto("/login.html");
   await page.click("#btn-ir-recuperar");
