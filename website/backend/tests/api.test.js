@@ -1386,3 +1386,41 @@ test("adjuntos: el límite de 5 MB se mide sobre los bytes reales del archivo", 
   expect(descartado.status).toBe(201);
   expect(descartado.body.adjuntos).toHaveLength(0);
 });
+
+test("adjuntos: el listado no trae el base64 y el detalle lo sirve recién al abrirse", async () => {
+  const token = await login();
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const creado = await request(app)
+    .post("/api/reportes")
+    .set("Authorization", `Bearer ${token}`)
+    .send({
+      tipo: "uso", titulo: "Adjunto fuera del listado", descripcion: "El base64 no viaja en el listado",
+      adjuntos: [{ nombre: "pixel.png", tipo: "image/png", tamano: 67, data: `data:image/png;base64,${png}` }]
+    });
+  expect(creado.status).toBe(201);
+  const id = creado.body.id;
+
+  // El listado responde con los metadatos, sin el base64 de cada adjunto.
+  const lista = await request(app).get("/api/reportes").set("Authorization", `Bearer ${token}`);
+  const cuerpo = Array.isArray(lista.body) ? lista.body : lista.body.data;
+  const fila = cuerpo.find((r) => r.id === id);
+  expect(fila.adjuntos).toHaveLength(1);
+  expect(fila.adjuntos[0]).toEqual({ nombre: "pixel.png", tipo: "image/png", tamano: 67 });
+  expect(fila.adjuntos[0].data).toBeUndefined();
+
+  // El detalle sí incluye el base64 para ver y descargar.
+  const detalle = await request(app).get(`/api/reportes/${id}`).set("Authorization", `Bearer ${token}`);
+  expect(detalle.status).toBe(200);
+  expect(detalle.body.adjuntos[0].data).toContain("data:image/png;base64,");
+
+  // Un reporte inexistente da 404.
+  const extraviado = await request(app).get("/api/reportes/rep_que_no_existe").set("Authorization", `Bearer ${token}`);
+  expect(extraviado.status).toBe(404);
+
+  // Un perfil no técnico solo puede abrir sus propios reportes.
+  const ajeno = await request(app).post("/api/login").send({ usuario: "prof_prog_basico", password: "ClaveTecnica1" });
+  const prohibido = await request(app)
+    .get(`/api/reportes/${id}`)
+    .set("Authorization", `Bearer ${ajeno.body.token}`);
+  expect(prohibido.status).toBe(403);
+});
