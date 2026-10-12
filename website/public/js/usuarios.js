@@ -1,5 +1,5 @@
 /* Imports (ES modules) */
-import { AUTH, actualizarUsuario, cargarUsuarios, crearUsuario, errorPassword } from "./data.js";
+import { AUTH, actualizarUsuario, cargarUsuarios, crearUsuario, eliminarUsuario, errorPassword } from "./data.js";
 import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, nivelLabel, renderSidebar, rolLabel, showToast } from "./app.js";
 
 
@@ -152,6 +152,14 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
     // Acciones admin
     const accionesEl = document.getElementById("det-acciones-admin");
     accionesEl.style.display = esAdmin ? "flex" : "none";
+
+    // El botón cambia según el estado: "Desactivar" para una cuenta activa y
+    // "Activar" para una que ya fue desactivada. No se puede eliminar la propia.
+    const btnDesactivar = document.getElementById("btn-desactivar-usr");
+    btnDesactivar.textContent = u.activo ? "Desactivar" : "Activar";
+    btnDesactivar.className   = u.activo ? "btn btn--danger" : "btn";
+    const btnEliminar = document.getElementById("btn-eliminar-usr");
+    btnEliminar.style.display = (esAdmin && u.id !== AUTH.getSesion()?.id) ? "" : "none";
 
     // Menú del nivel de acceso: solo el administrador lo otorga o lo cambia.
     const nivelControl = document.getElementById("det-nivel-control");
@@ -329,9 +337,9 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
       return;
     }
     const texto = u.activo
-      ? { futuro: "Desactivar", pasado: "desactivado" }
-      : { futuro: "Reactivar", pasado: "reactivado" };
-    if (!window.confirm(`${texto.futuro} al usuario ${u.nombre} ${u.apellido}? Ya no podrá iniciar sesión.`)) return;
+      ? { futuro: "Desactivar", pasado: "desactivado", aviso: "Ya no podrá iniciar sesión." }
+      : { futuro: "Activar", pasado: "activado", aviso: "Podrá volver a iniciar sesión." };
+    if (!window.confirm(`${texto.futuro} al usuario ${u.nombre} ${u.apellido}? ${texto.aviso}`)) return;
     actualizarUsuario(u.id, { activo: !u.activo })
       .then(() => cargarUsuarios())
       .then((usuarios) => {
@@ -342,6 +350,24 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
         showToast(`Usuario ${u.nombre} ${u.apellido} ${texto.pasado} correctamente.`);
       })
       .catch((err) => showToast(err.message || "No se pudo actualizar el usuario.", "error"));
+  });
+
+  // Eliminar definitivamente una cuenta (solo administrador).
+  document.getElementById("btn-eliminar-usr").addEventListener("click", () => {
+    const u = usuariosCache.find((x) => x.id === detalleActualId);
+    if (!u) return;
+    const nombre = `${u.nombre} ${u.apellido}`;
+    if (!window.confirm(`¿Eliminar definitivamente al usuario ${nombre}? Esta acción no se puede deshacer. Sus reservas se eliminarán y sus reportes quedarán sin autor.`)) return;
+    eliminarUsuario(u.id)
+      .then(() => cargarUsuarios())
+      .then((usuarios) => {
+        usuariosCache = usuarios;
+        renderStats(usuarios);
+        renderGrid(usuarios);
+        volverAlListado();
+        showToast(`Usuario ${nombre} eliminado correctamente.`);
+      })
+      .catch((err) => showToast(err.message || "No se pudo eliminar el usuario.", "error"));
   });
 
   document.getElementById("btn-cerrar-usr-modal").addEventListener("click", () =>

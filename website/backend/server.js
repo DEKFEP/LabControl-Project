@@ -666,7 +666,7 @@ const ACCIONES_SIEMPRE = new Set([
   "2fa_configuracion_iniciada", "2fa_activada", "2fa_desactivada",
   "password_cambiada", "password_restablecida", "refresh_reutilizado",
   "backup_descargado", "backup_restaurado", "configuracion_actualizada",
-  "usuario_creado", "usuario_editado", "usuario_registrado"
+  "usuario_creado", "usuario_editado", "usuario_registrado", "usuario_eliminado"
 ]);
 
 function registrarAuditoria(req, accion, detalle = {}, contexto = null) {
@@ -1750,6 +1750,37 @@ app.patch("/api/usuarios/:id", authenticateToken, [
   }
 
   res.json(usrFromRow(db.prepare("SELECT * FROM usuarios WHERE id = ?").get(req.params.id)));
+});
+
+// Baja definitiva de una cuenta (solo admin), frente a la desactivación:
+// el usuario desaparece del padrón y no puede volver a iniciar sesión. Para no
+// romper las claves foráneas ni perder datos, los reportes y las solicitudes
+// que lo referencian quedan sin autor; las tablas hijas con ON DELETE CASCADE
+// (agenda, notificaciones, refresh tokens, resets y 2FA) se limpian solas.
+app.delete("/api/usuarios/:id", authenticateToken, requireAdmin, (req, res) => {
+  const actual = db.prepare("SELECT * FROM usuarios WHERE id = ?").get(req.params.id);
+  if (!actual) return res.status(404).json({ error: "Usuario no encontrado" });
+  if (String(actual.id) === String(req.user.id)) {
+    return res.status(400).json({ error: "No puedes eliminar tu propio usuario" });
+  }
+  if (actual.rol === "admin") {
+    const { n } = db.prepare("SELECT COUNT(*) AS n FROM usuarios WHERE rol = 'admin'").get();
+    if (n <= 1) return res.status(400).json({ error: "No puedes eliminar al único administrador" });
+  }
+
+  db.exec("BEGIN");
+  try {
+    db.prepare("UPDATE reportes SET generado_por = NULL WHERE generado_por = ?").run(req.params.id);
+    db.prepare("UPDATE solicitudes_especialidad SET resuelta_por = NULL WHERE resuelta_por = ?").run(req.params.id);
+    db.prepare("DELETE FROM usuarios WHERE id = ?").run(req.params.id);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+
+  registrarAuditoria(req, "usuario_eliminado", { usuario: actual.id, rol: actual.rol });
+  res.status(204).end();
 });
 
 /* Agenda / reservas */
