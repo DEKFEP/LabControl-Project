@@ -7,6 +7,9 @@ let dir;
 beforeAll(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "lc-db-"));
   process.env.LC_DB_DIR = dir;
+  // Estas pruebas verifican la semilla de ejemplo, que en producción está
+  // desactivada por defecto: se pide de forma explícita.
+  process.env.LC_SEED_DEMO = "1";
 });
 
 afterAll(() => {

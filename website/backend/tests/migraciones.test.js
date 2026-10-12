@@ -7,6 +7,11 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+// La semilla de ejemplo se pide de forma explícita (en producción está
+// desactivada por defecto). Las pruebas que verifican el comportamiento sin
+// semilla la apagan y la restauran al terminar.
+process.env.LC_SEED_DEMO = "1";
+
 const dirs = [];
 
 function dirNuevo(prefijo) {
@@ -359,6 +364,89 @@ test("semilla: crea la cuenta de administrador con la contraseña hasheada", asy
   } finally {
     db.close();
   }
+});
+
+/* Semilla de ejemplo desactivada (comportamiento de producción) */
+
+// Guarda y restaura las variables de entorno de la semilla alrededor de `fn`.
+async function conEntornoSemilla(vars, fn) {
+  const respaldo = new Map();
+  for (const clave of Object.keys(vars)) respaldo.set(clave, process.env[clave]);
+  for (const [clave, valor] of Object.entries(vars)) {
+    if (valor === undefined) delete process.env[clave];
+    else process.env[clave] = valor;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [clave, valor] of respaldo) {
+      if (valor === undefined) delete process.env[clave];
+      else process.env[clave] = valor;
+    }
+  }
+}
+
+test("semilla: sin LC_SEED_DEMO no carga cuentas ni datos de ejemplo", async () => {
+  await conEntornoSemilla({
+    LC_SEED_DEMO: undefined,
+    LC_ADMIN_USER: undefined,
+    LC_ADMIN_PASSWORD: undefined,
+    LC_ADMIN_EMAIL: undefined
+  }, async () => {
+    const { db } = await cargarComo("lc-seed-nodejo-");
+    try {
+      expect(db.prepare("SELECT COUNT(*) AS n FROM usuarios").get().n).toBe(0);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM agenda").get().n).toBe(0);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM reportes").get().n).toBe(0);
+      // La ficha de laboratorios sí se siembra (estructura del centro).
+      expect(db.prepare("SELECT COUNT(*) AS n FROM laboratorios").get().n).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test("semilla: sin ejemplo crea el administrador desde LC_ADMIN_*", async () => {
+  await conEntornoSemilla({
+    LC_SEED_DEMO: undefined,
+    LC_ADMIN_USER: "jefa_tic",
+    LC_ADMIN_PASSWORD: "ClaveAdmin123",
+    LC_ADMIN_EMAIL: "jefa@liceo.cl"
+  }, async () => {
+    const { db } = await cargarComo("lc-seed-adminenv-");
+    try {
+      const filas = db.prepare("SELECT id, rol, nivel_acceso, email, password FROM usuarios").all();
+      expect(filas).toHaveLength(1);
+      expect(filas[0].id).toBe("jefa_tic");
+      expect(filas[0].rol).toBe("admin");
+      expect(filas[0].nivel_acceso).toBe("total");
+      expect(filas[0].email).toBe("jefa@liceo.cl");
+      expect(String(filas[0].password)).toMatch(/^\$2[aby]\$\d{2}\$/);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test("semilla: reejecutarla sin ejemplo no duplica ni pisa el administrador", async () => {
+  await conEntornoSemilla({
+    LC_SEED_DEMO: undefined,
+    LC_ADMIN_USER: "INSUCO",
+    LC_ADMIN_PASSWORD: "Insuco1336",
+    LC_ADMIN_EMAIL: "admin@liceo.cl"
+  }, async () => {
+    const { db, aplicarSemilla } = await cargarComo("lc-seed-adminidem-");
+    try {
+      const antes = db.prepare("SELECT password FROM usuarios WHERE id = 'INSUCO'").get().password;
+      const resumen = await aplicarSemilla(db);
+      expect(resumen.admin).toBe(0);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM usuarios").get().n).toBe(1);
+      // La contraseña ya creada no se vuelve a escribir.
+      expect(db.prepare("SELECT password FROM usuarios WHERE id = 'INSUCO'").get().password).toBe(antes);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 /* ------------------------------------------------------------------ */

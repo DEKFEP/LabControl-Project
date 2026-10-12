@@ -29,7 +29,9 @@ export default defineConfig({
       // La suite inicia sesión decenas de veces por corrida: ampliar el máximo
       // de intentos de login (el límite real de producción es 10).
       LC_LOGIN_LIMIT: "200",
-      LC_DB_DIR: path.join(os.tmpdir(), `lc-e2e-db-${Date.now()}`)
+      LC_DB_DIR: path.join(os.tmpdir(), `lc-e2e-db-${Date.now()}`),
+      // La suite e2e usa las cuentas de ejemplo del proyecto.
+      LC_SEED_DEMO: "1"
     }
   }
 });
