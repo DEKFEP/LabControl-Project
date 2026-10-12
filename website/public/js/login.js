@@ -149,10 +149,11 @@ registroForm.addEventListener("submit", async (e) => {
   btn.disabled = true;
   btn.textContent = "Registrando…";
   try {
-    await AUTH.registro({ id: usuario, nombre, apellido, email, area, especialidad, password: pass });
-    mostrarBox(registroOk, "Cuenta creada correctamente. Iniciando sesión…");
-    const r = await AUTH.login(usuario, pass);
-    window.location.href = r && !r.requires2FA ? "index.html" : "login.html";
+    const respuesta = await AUTH.registro({ id: usuario, nombre, apellido, email, area, especialidad, password: pass });
+    // La cuenta queda pendiente de aprobación: no se inicia sesión automáticamente.
+    mostrarBox(registroOk, (respuesta && respuesta.mensaje)
+      || "Cuenta creada. Un administrador debe aprobarla antes de que puedas ingresar.");
+    registroForm.reset();
   } catch (err) {
     mostrarBox(registroError, (err && err.message) ? err.message : "No se pudo crear la cuenta.");
   } finally {

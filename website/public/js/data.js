@@ -471,6 +471,9 @@ function demoRequest(metodo, ruta, cuerpo) {
         (u) => u.id.toLowerCase() === usuario || String(u.email).toLowerCase() === usuario
       );
       if (!usr || !String(cuerpo?.password ?? "").trim()) throw new Error("Credenciales incorrectas");
+      // Las cuentas pendientes de aprobación no pueden iniciar sesión (igual que
+      // en la API real, que las trata como credenciales inválidas).
+      if (usr.activo === false) throw new Error("Credenciales incorrectas");
       const { password, ...sinPassword } = usr;
       if (demo2faEstado()) {
         D._2faChallengeUsuario = usr.id;
@@ -511,19 +514,23 @@ function demoRequest(metodo, ruta, cuerpo) {
         especialidad: String(u.especialidad ?? ""),
         // Sin nivel de acceso: lo otorga el administrador desde la ficha del usuario.
         nivelAcceso: null,
-        activo: true
+        // La cuenta queda inactiva hasta que un administrador la apruebe.
+        activo: false
       };
       D.usuarios.push(nuevo);
       notificarDemoAAdmins({
         toggle: "alertaNuevosUsuarios",
         tipo: "usuario_registrado",
         titulo: "Nuevo profesor registrado",
-        mensaje: `{quien} se registró en el sistema (${id}). Abre la notificación para otorgarle el nivel de acceso.`,
+        mensaje: `{quien} se registró en el sistema (${id}) y espera aprobación. Abre la notificación para activar la cuenta y otorgarle el nivel de acceso.`,
         actorId: id,
         usuarioRef: id
       });
       const { password, ...publico } = nuevo;
-      return copia(publico);
+      return {
+        ...copia(publico),
+        mensaje: "Tu cuenta quedó creada y pendiente de aprobación. Un administrador debe activarla antes de que puedas ingresar."
+      };
     }
 
     case "POST recuperar-contrasena": {
@@ -944,8 +951,9 @@ export const AUTH = {
     }
   },
 
-  // Registro autónomo: crea la cuenta con rol "otro_area" y sin nivel de acceso
-  // (lo otorga el administrador desde la ficha del usuario).
+  // Registro autónomo: crea la cuenta con rol "otro_area", sin nivel de acceso
+  // (lo otorga el administrador desde la ficha del usuario) y pendiente de
+  // aprobación. La respuesta trae un `mensaje` para mostrar al usuario.
   async registro(datos) {
     return apiSend("POST", "/registro", datos);
   },

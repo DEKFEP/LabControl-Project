@@ -85,6 +85,17 @@ function reglaPassword(campo) {
 // Token opcional: si LC_SALUD_TOKEN está definido, /api/salud revela la versión
 // y el nombre del servicio solo a quien lo presente en `x-lc-salud-token`.
 const SALUD_TOKEN = process.env.LC_SALUD_TOKEN || "";
+
+// Registro público de cuentas. Por seguridad nace CERRADO: solo se habilita si
+// el despliegue declara los dominios de correo admitidos en LC_REGISTRO_DOMINIOS
+// (lista separada por comas, con o sin la arroba; p. ej. "liceo.cl,insuco.cl").
+// Aunque el dominio esté admitido, la cuenta queda INACTIVA hasta que un
+// administrador la apruebe desde Usuarios.
+const REGISTRO_DOMINIOS = String(process.env.LC_REGISTRO_DOMINIOS || "")
+  .split(",")
+  .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+  .filter(Boolean);
+
 if (!process.env.JWT_SECRET) {
   console.log("  INFO: JWT_SECRET no definido; se usa (o se crea) una clave persistente en la carpeta de datos.");
   console.log("  INFO: Las sesiones sobreviven a los reinicios; en producción define JWT_SECRET como variable de entorno.");
@@ -235,7 +246,7 @@ const registroLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Demasiados intentos de registro. Intenta de nuevo más tarde." }
 });
-app.use("/api/registro", registroLimiter);
+// El límite de registro se aplica solo al POST (crear cuenta).
 
 // Recuperación de contraseña: por IP y por cuenta (evita abuso del envío de correos).
 // El límite cubre solo la SOLICITUD (la que dispara el envío de correo). Con
@@ -1493,7 +1504,7 @@ app.post("/api/recuperar-contrasena/:token", [
 });
 
 /* Registro de cuenta propia (público, sin sesión) */
-app.post("/api/registro", [
+app.post("/api/registro", registroLimiter, [
   body("id").trim().matches(/^[a-zA-Z0-9_]+$/).withMessage("El usuario solo puede contener letras, números y guion bajo"),
   body("nombre").trim().notEmpty().withMessage("El nombre es obligatorio"),
   body("apellido").trim().notEmpty().withMessage("El apellido es obligatorio"),
@@ -1502,6 +1513,11 @@ app.post("/api/registro", [
   body("area").optional({ values: "falsy" }).trim().isLength({ max: 100 }).withMessage("El área no puede superar 100 caracteres"),
   body("especialidad").optional({ values: "falsy" }).trim().isLength({ max: 200 }).withMessage("La especialidad no puede superar 200 caracteres")
 ], async (req, res) => {
+  // Registro cerrado: sin dominios admitidos no se crea ninguna cuenta pública.
+  if (REGISTRO_DOMINIOS.length === 0) {
+    return res.status(403).json({ error: "El registro público está cerrado. Solicita tu cuenta al administrador." });
+  }
+
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ error: "Datos inválidos", details: errors.array() });
@@ -1510,6 +1526,15 @@ app.post("/api/registro", [
   const u = req.body;
   u.id = String(u.id ?? "").trim();
   u.email = String(u.email ?? "").trim().toLowerCase();
+
+  // Solo se admiten correos de los dominios institucionales declarados.
+  const dominio = u.email.split("@")[1] ?? "";
+  if (!REGISTRO_DOMINIOS.includes(dominio)) {
+    return res.status(403).json({
+      error: `Solo se permite el registro con correos de ${REGISTRO_DOMINIOS.map((d) => "@" + d).join(", ")}.`
+    });
+  }
+
   if (db.prepare("SELECT id FROM usuarios WHERE id = ?").get(u.id)) {
     return res.status(409).json({ error: "Ya existe una cuenta con ese usuario" });
   }
@@ -1519,9 +1544,11 @@ app.post("/api/registro", [
 
   const iniciales = `${(u.nombre[0] ?? "?")}${(u.apellido[0] ?? "")}`.toUpperCase();
   const hashed = await bcrypt.hash(u.password, 10);
+  // La cuenta nace INACTIVA: no puede iniciar sesión hasta que un administrador
+  // la apruebe desde Usuarios. El nivel de acceso también lo otorga el admin.
   db.prepare(`
     INSERT INTO usuarios (id,nombre,apellido,iniciales,email,password,rol,area,especialidad,nivel_acceso,activo)
-    VALUES (@id,@nombre,@apellido,@iniciales,@email,@password,@rol,@area,@especialidad,@nivel_acceso,1)
+    VALUES (@id,@nombre,@apellido,@iniciales,@email,@password,@rol,@area,@especialidad,@nivel_acceso,0)
   `).run({
     id: u.id,
     nombre: sanitizarTexto(u.nombre, 100),
@@ -1544,7 +1571,7 @@ app.post("/api/registro", [
       toggle: "alertaNuevosUsuarios",
       tipo: "usuario_registrado",
       titulo: "Nuevo profesor registrado",
-      mensaje: `{quien} se registró en el sistema (${u.id}). Abre la notificación para otorgarle el nivel de acceso.`,
+      mensaje: `{quien} se registró en el sistema (${u.id}) y espera aprobación. Abre la notificación para activar la cuenta y otorgarle el nivel de acceso.`,
       actorId: u.id,
       usuarioRef: u.id,
       destinatario: a.id
@@ -1552,7 +1579,10 @@ app.post("/api/registro", [
   }
 
   registrarAuditoria(req, "usuario_registrado", { usuario: u.id, email: u.email });
-  res.status(201).json(usrFromRow(db.prepare("SELECT * FROM usuarios WHERE id = ?").get(u.id)));
+  res.status(201).json({
+    mensaje: "Tu cuenta quedó creada y pendiente de aprobación. Un administrador debe activarla antes de que puedas ingresar.",
+    usuario: usrFromRow(db.prepare("SELECT * FROM usuarios WHERE id = ?").get(u.id))
+  });
 });
 
 /* Laboratorios */

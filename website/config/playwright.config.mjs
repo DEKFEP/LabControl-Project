@@ -31,7 +31,10 @@ export default defineConfig({
       LC_LOGIN_LIMIT: "200",
       LC_DB_DIR: path.join(os.tmpdir(), `lc-e2e-db-${Date.now()}`),
       // La suite e2e usa las cuentas de ejemplo del proyecto.
-      LC_SEED_DEMO: "1"
+      LC_SEED_DEMO: "1",
+      // El registro público solo admite los dominios declarados aquí; la suite
+      // se registra con correos @liceo.cl (y las cuentas quedan pendientes).
+      LC_REGISTRO_DOMINIOS: "liceo.cl"
     }
   }
 });
