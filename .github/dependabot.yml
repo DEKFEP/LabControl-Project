@@ -1,0 +1,25 @@
+# Higiene de dependencias: mantiene al día las dependencias npm (calidad y
+# backend) y las acciones de GitHub. Dependabot abre un PR por actualización
+# cada sábado; el CI los valida antes de mergear.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /website/config
+    schedule:
+      interval: weekly
+      day: saturday
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: npm
+    directory: /website/backend
+    schedule:
+      interval: weekly
+      day: saturday
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: saturday
+    open-pull-requests-limit: 10

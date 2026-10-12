@@ -35,6 +35,31 @@ jobs:
         working-directory: website/config
         run: npm run check
 
+  audit:
+    name: Auditoría de dependencias (npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: website/config/package-lock.json
+      - name: Instalar dependencias de calidad (config)
+        working-directory: website/config
+        run: npm ci
+      # Grado "high": los moderados (p. ej. la cadena de jest) se ven en el
+      # reporte pero no tumban el CI. Solo lo crítico/alto bloquea la rama.
+      - name: Auditoría de dependencias de calidad (config)
+        working-directory: website/config
+        run: npm audit --audit-level=high
+      - name: Instalar dependencias de runtime (backend)
+        working-directory: website/backend
+        run: npm ci
+      - name: Auditoría de dependencias de runtime (backend)
+        working-directory: website/backend
+        run: npm audit --audit-level=high
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
