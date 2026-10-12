@@ -227,9 +227,29 @@ export function renderSidebar(activeHref, requireAuth = true) {
 /* Notificaciones */
 
 let __notifsCache = [];
-let __notifsTimer = null;
 let __notifsVistas = null;
 let __recordatoriosUltima = 0;
+
+// Sondeo de notificaciones. Se detiene con la pestaña en segundo plano (no tiene
+// sentido pedir datos que nadie ve ni gastar cuota de peticiones) y se reanuda,
+// con una actualización inmediata, al volver a ella. Si un sondeo falla (red o
+// 429), el siguiente se espacia en vez de insistir cada 30 s.
+const POLL_NOTIF_MS = 30000;
+const POLL_NOTIF_MAX_MS = 5 * 60 * 1000;
+let __notifsTimer = null;
+let __notifsDelay = POLL_NOTIF_MS;
+let __notifsEscuchasListas = false;
+
+function programarSondeo() {
+  if (__notifsTimer) clearTimeout(__notifsTimer);
+  __notifsTimer = null;
+  if (document.hidden) return; // en segundo plano no se sondea
+  __notifsTimer = setTimeout(async () => {
+    const ok = await refrescarNotificaciones();
+    __notifsDelay = ok ? POLL_NOTIF_MS : Math.min(__notifsDelay * 2, POLL_NOTIF_MAX_MS);
+    programarSondeo();
+  }, __notifsDelay);
+}
 
 function inicializarNotificaciones() {
   const sesion = AUTH.getSesion();
@@ -300,8 +320,24 @@ function inicializarNotificaciones() {
   actualizarIconosLucide();
 
   refrescarNotificaciones();
-  if (__notifsTimer) clearInterval(__notifsTimer);
-  __notifsTimer = setInterval(refrescarNotificaciones, 30000);
+  __notifsDelay = POLL_NOTIF_MS;
+  programarSondeo();
+  if (!__notifsEscuchasListas) {
+    __notifsEscuchasListas = true;
+    // Al volver a la pestaña: actualizar de inmediato y reanudar el sondeo.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        if (__notifsTimer) { clearTimeout(__notifsTimer); __notifsTimer = null; }
+      } else {
+        __notifsDelay = POLL_NOTIF_MS;
+        refrescarNotificaciones().finally(programarSondeo);
+      }
+    });
+    // Al descargar la página, soltar el temporizador.
+    window.addEventListener("pagehide", () => {
+      if (__notifsTimer) { clearTimeout(__notifsTimer); __notifsTimer = null; }
+    });
+  }
 }
 
 /* Notificaciones del sistema */
@@ -375,7 +411,7 @@ function destinoNotificacion(n) {
 
 export async function refrescarNotificaciones() {
   const sesion = AUTH.getSesion();
-  if (!sesion || typeof cargarNotificaciones !== "function") return;
+  if (!sesion || typeof cargarNotificaciones !== "function") return true;
   try {
     __notifsCache = await cargarNotificaciones(sesion.id) ?? [];
 
@@ -392,7 +428,11 @@ export async function refrescarNotificaciones() {
     revisarRecordatoriosReserva(sesion);
     const panel = document.querySelector(".notif-panel");
     if (panel && panel.style.display === "block") renderListaNotificaciones();
-  } catch {}
+    return true;
+  } catch {
+    // Se propaga el fallo al sondeo para que espacie los intentos.
+    return false;
+  }
 }
 
 async function revisarRecordatoriosReserva(sesion) {
