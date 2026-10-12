@@ -28,7 +28,7 @@ jobs:
         # Historial completo: el chequeo de version de mas abajo necesita saber
         # en que commit se toco `website/backend` por ultima vez, y con el
         # `fetch-depth: 1` de GitHub Actions ese commit no existe todavia.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
