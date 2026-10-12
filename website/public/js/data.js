@@ -303,7 +303,19 @@ function demoRequest(metodo, ruta, cuerpo) {
     case "GET reportes": {
       const sesion = AUTH.getSesion();
       const lista = demoEsTecnico ? D.reportes : D.reportes.filter((r) => r.generadoPor === sesion?.id);
-      return copia(lista);
+      // Igual que el backend: el listado no arrastra el base64 de los adjuntos.
+      return copia(lista.map((r) => ({
+        ...r,
+        adjuntos: (r.adjuntos ?? []).map((a) => ({ nombre: a.nombre, tipo: a.tipo, tamano: a.tamano }))
+      })));
+    }
+
+    case "GET reportes_x": {
+      const rep = D.reportes.find((r) => r.id === id);
+      if (!rep) throw new Error("Reporte no encontrado");
+      const sesion = AUTH.getSesion();
+      if (!demoEsTecnico && rep.generadoPor !== sesion?.id) throw new Error("No tienes acceso a este reporte");
+      return copia(rep);
     }
 
     case "POST reportes": {
@@ -788,6 +800,10 @@ export function eliminarReserva(id) {
 
 export function cargarReportes() {
   return apiGet("/reportes");
+}
+
+export function cargarReporte(id) {
+  return apiGet(`/reportes/${id}`);
 }
 
 export function crearReporte(reporte) {

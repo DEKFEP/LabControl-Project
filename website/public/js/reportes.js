@@ -1,5 +1,5 @@
 /* Imports (ES modules) */
-import { AUTH, actualizarReporte, cargarReportes, cargarUsuarios, crearReporte, eliminarReporte } from "./data.js";
+import { AUTH, actualizarReporte, cargarReporte, cargarReportes, cargarUsuarios, crearReporte, eliminarReporte } from "./data.js";
 import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam, refrescarNotificaciones, renderSidebar, showToast } from "./app.js";
 
 
@@ -15,6 +15,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
   let reportesCache = [];
   let usuariosCache = [];
   let repAbiertoId  = null;
+  let repAbierto    = null;
 
   /* Estado del modal (crear / editar) */
   let modoModal = "crear";
@@ -83,9 +84,18 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     return !!sesion && (sesion.rol === "admin" || rep.generadoPor === sesion.id);
   }
 
-  function abrirReporte(id) {
-    const rep = reportesCache.find((r) => r.id === id);
-    if (!rep) return;
+  async function abrirReporte(id) {
+    if (!reportesCache.some((r) => r.id === id)) return;
+    // El listado ya no trae el base64 de los adjuntos (inflaba la respuesta):
+    // se pide el reporte completo, con sus adjuntos, recién al abrirlo.
+    let rep;
+    try {
+      rep = await cargarReporte(id);
+    } catch {
+      showToast("No se pudo abrir el reporte.", "error");
+      return;
+    }
+    repAbierto   = rep;
     repAbiertoId = id;
     const autor = usuariosCache.find((u) => u.id === rep.generadoPor);
 
@@ -181,8 +191,8 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
   }
 
   function verImagenLightbox(reporteId, indice) {
-    const rep = reportesCache.find((r) => r.id === reporteId);
-    const adj = rep?.adjuntos?.[indice];
+    if (repAbierto?.id !== reporteId) return;
+    const adj = repAbierto?.adjuntos?.[indice];
     if (!adjuntoSeguro(adj)) return;
     document.getElementById("lightbox-img").src = adj.data;
     document.getElementById("lightbox-img").alt = adj.nombre;
@@ -203,7 +213,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
   }
 
   function editarReporteActual() {
-    const rep = reportesCache.find((r) => r.id === repAbiertoId);
+    const rep = repAbierto;
     if (!rep) return;
     if (!puedeModificar(rep)) { showToast("Solo el administrador o el creador pueden editar este reporte.", "error"); return; }
 
@@ -248,6 +258,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
 
   document.getElementById("btn-volver-rep").addEventListener("click", () => {
     repAbiertoId = null;
+    repAbierto   = null;
     document.getElementById("vista-reporte").style.display = "none";
     document.getElementById("rep-grid").style.display      = "grid";
     document.querySelector(".page-header").style.display   = "flex";

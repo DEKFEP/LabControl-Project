@@ -602,11 +602,17 @@ function agFromRow(row) {
   };
 }
 
-function repFromRow(row) {
+// `conAdjuntos = false` (listado): no se incluye el base64 de cada adjunto, que
+// es lo que infla la respuesta; solo nombre, tipo y tamaño. El detalle
+// (GET /api/reportes/:id) sí trae el `data` completo para ver y descargar.
+function repFromRow(row, conAdjuntos = true) {
+  const adjuntos = JSON.parse(row.adjuntos || "[]");
   return {
     id: row.id, tipo: row.tipo, titulo: row.titulo, descripcion: row.descripcion,
     fecha: row.fecha, generadoPor: row.generado_por, datos: JSON.parse(row.datos || "{}"),
-    adjuntos: JSON.parse(row.adjuntos || "[]")
+    adjuntos: conAdjuntos
+      ? adjuntos
+      : adjuntos.map((a) => ({ nombre: a.nombre, tipo: a.tipo, tamano: a.tamano }))
   };
 }
 
@@ -1925,7 +1931,20 @@ app.get("/api/reportes", authenticateToken, (req, res) => {
   const rows = esTecnico(req)
     ? db.prepare("SELECT * FROM reportes ORDER BY fecha DESC").all()
     : db.prepare("SELECT * FROM reportes WHERE generado_por = ? ORDER BY fecha DESC").all(req.user.id);
-  responderLista(req, res, rows.map(repFromRow));
+  // El listado no viaja con el base64 de los adjuntos (inflaba cada respuesta):
+  // solo sus metadatos. El detalle sí los trae completos.
+  responderLista(req, res, rows.map((r) => repFromRow(r, false)));
+});
+
+app.get("/api/reportes/:id", authenticateToken, (req, res) => {
+  const row = db.prepare("SELECT * FROM reportes WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Reporte no encontrado" });
+  // Mismo criterio que el listado: los perfiles técnicos ven cualquiera; el
+  // resto, solo los suyos.
+  if (!esTecnico(req) && row.generado_por !== req.user.id) {
+    return res.status(403).json({ error: "No tienes acceso a este reporte" });
+  }
+  res.json(repFromRow(row));
 });
 
 app.post("/api/reportes", authenticateToken, [
