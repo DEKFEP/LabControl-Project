@@ -8,6 +8,10 @@ let app, dir;
 beforeAll(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "lc-api-"));
   process.env.LC_DB_DIR = dir;
+  // La suite se apoya en la semilla de ejemplo (INSUCO, prof_juan, prof_camila y
+  // sus datos): hay que pedirla explícitamente, porque en producción está
+  // desactivada por defecto.
+  process.env.LC_SEED_DEMO = "1";
   // La suite completa supera los topes pensados para producción (200 peticiones
   // cada 15 minutos, 10 inicios de sesión por cuenta). Al crecer la suite, las
   // pruebas del final recibían 429 del propio rate limiting y fallaban por un

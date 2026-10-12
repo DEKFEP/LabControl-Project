@@ -795,6 +795,21 @@ db = await abrirConexion();
 
 const SEMILLA_VERSION = 2;
 
+// Los datos de ejemplo (las cuentas con contraseñas conocidas, las reservas y
+// los reportes) solo se cargan cuando se pide de forma explícita con
+// LC_SEED_DEMO=1. En una instalación real no se quieren credenciales de
+// demostración en la base, así que el administrador se crea desde LC_ADMIN_*
+// (ver `sembrarAdministrador`). La ficha de laboratorios y su inventario sí se
+// siembran siempre: son la estructura del centro, no una credencial.
+const SEED_DEMO = /^(1|true|si|sí|yes|on)$/i.test(String(process.env.LC_SEED_DEMO || "").trim());
+
+// Cuenta de administrador para instalaciones sin semilla de ejemplo. La
+// contraseña es obligatoria para poder crear la cuenta: sin ella no se inventa
+// una por defecto (sería una credencial conocida más).
+const ADMIN_USUARIO = String(process.env.LC_ADMIN_USER || "").trim();
+const ADMIN_PASSWORD = process.env.LC_ADMIN_PASSWORD || "";
+const ADMIN_EMAIL = String(process.env.LC_ADMIN_EMAIL || "").trim();
+
 // Las contraseñas de ejemplo se guardan ya hasheadas con bcrypt (coste 10):
 // así el repositorio no contiene ninguna contraseña en texto plano. Son las
 // claves documentadas del proyecto (INSUCO/Insuco1336 y los docentes demo),
@@ -884,7 +899,7 @@ function completarSiVacio(d, tabla, id, valores, clave) {
 // Aplica la semilla. Es idempotente: ejecutarla N veces produce el mismo
 // resultado que ejecutarla una, y devuelve un resumen de lo que hizo.
 async function aplicarSemilla(conexion = db) {
-  const resumen = { version: SEMILLA_VERSION, labs: 0, equipos: 0, usuarios: 0, agenda: 0, reportes: 0, completados: 0 };
+  const resumen = { version: SEMILLA_VERSION, labs: 0, equipos: 0, usuarios: 0, admin: 0, agenda: 0, reportes: 0, completados: 0 };
 
   // Los hashes se calculan ANTES de abrir la transacción. Hashear 7 contraseñas
   // con bcrypt son ~600 ms de CPU: dejarlo dentro de la transacción mantendría
@@ -892,12 +907,26 @@ async function aplicarSemilla(conexion = db) {
   // consulta que llegara en ese rato se encontraría con la base bloqueada.
   const existeUsuario = conexion.prepare("SELECT id FROM usuarios WHERE id = ?");
   const passwords = new Map();
-  for (const u of USUARIOS) {
-    if (existeUsuario.get(u.id)) continue;
-    // Un valor ya hasheado (semilla) se usa tal cual; solo se hashea el texto
-    // plano, por si alguien agrega una cuenta de ejemplo sin hashear.
-    const yaHasheado = typeof u.password === "string" && /^\$2[aby]\$/.test(u.password);
-    passwords.set(u.id, yaHasheado ? u.password : await bcrypt.hash(u.password, 10));
+  if (SEED_DEMO) {
+    for (const u of USUARIOS) {
+      if (existeUsuario.get(u.id)) continue;
+      // Un valor ya hasheado (semilla) se usa tal cual; solo se hashea el texto
+      // plano, por si alguien agrega una cuenta de ejemplo sin hashear.
+      const yaHasheado = typeof u.password === "string" && /^\$2[aby]\$/.test(u.password);
+      passwords.set(u.id, yaHasheado ? u.password : await bcrypt.hash(u.password, 10));
+    }
+  }
+
+  // Sin semilla de ejemplo, la base de una instalación nueva se quedaría sin
+  // administrador. Se prepara la cuenta a partir de LC_ADMIN_* (el hash se
+  // calcula antes de la transacción, por el mismo motivo que los de ejemplo).
+  let adminHash = null;
+  if (!SEED_DEMO && ADMIN_PASSWORD) {
+    const hayAdminActivo = conexion.prepare("SELECT id FROM usuarios WHERE rol = 'admin' AND activo = 1").get();
+    const idAdmin = ADMIN_USUARIO || "INSUCO";
+    if (!hayAdminActivo && !existeUsuario.get(idAdmin)) {
+      adminHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+    }
   }
 
   conexion.exec("BEGIN");
@@ -971,25 +1000,37 @@ async function aplicarSemilla(conexion = db) {
       }
     }
 
-    for (const u of USUARIOS) {
-      if (hayUsuario.get(u.id)) {
-        // Una cuenta existente solo se completa (nombre, correo, rol vacío);
-        // su contraseña y su rol activo nunca se tocan.
-        if (completarSiVacio(conexion, "usuarios", u.id, {
-          nombre: u.nombre, apellido: u.apellido, iniciales: u.iniciales,
-          email: u.email, area: u.area, especialidad: u.especialidad
-        }, "id")) resumen.completados++;
-        continue;
+    if (SEED_DEMO) {
+      for (const u of USUARIOS) {
+        if (hayUsuario.get(u.id)) {
+          // Una cuenta existente solo se completa (nombre, correo, rol vacío);
+          // su contraseña y su rol activo nunca se tocan.
+          if (completarSiVacio(conexion, "usuarios", u.id, {
+            nombre: u.nombre, apellido: u.apellido, iniciales: u.iniciales,
+            email: u.email, area: u.area, especialidad: u.especialidad
+          }, "id")) resumen.completados++;
+          continue;
+        }
+        insertUsr.run({
+          id: u.id, nombre: u.nombre, apellido: u.apellido, iniciales: u.iniciales,
+          email: u.email, password: passwords.get(u.id), rol: u.rol, area: u.area,
+          especialidad: u.especialidad, nivel_acceso: u.nivelAcceso
+        });
+        resumen.usuarios++;
       }
+    } else if (adminHash) {
+      // Instalación sin datos de ejemplo: se crea la cuenta de administrador
+      // indicada por LC_ADMIN_* para poder entrar por primera vez.
+      const idAdmin = ADMIN_USUARIO || "INSUCO";
       insertUsr.run({
-        id: u.id, nombre: u.nombre, apellido: u.apellido, iniciales: u.iniciales,
-        email: u.email, password: passwords.get(u.id), rol: u.rol, area: u.area,
-        especialidad: u.especialidad, nivel_acceso: u.nivelAcceso
+        id: idAdmin, nombre: "Administrador", apellido: "Sistema", iniciales: "AD",
+        email: ADMIN_EMAIL || "admin@liceo.cl", password: adminHash, rol: "admin",
+        area: "Administración", especialidad: "", nivel_acceso: "total"
       });
-      resumen.usuarios++;
+      resumen.admin++;
     }
 
-    for (const r of AGENDA) {
+    if (SEED_DEMO) for (const r of AGENDA) {
       if (hayAgenda.get(r.id)) continue;
       insertAgenda.run({
         id: r.id, lab_id: r.labId, usuario_id: r.usuarioId, fecha: r.fecha,
@@ -998,7 +1039,7 @@ async function aplicarSemilla(conexion = db) {
       resumen.agenda++;
     }
 
-    for (const r of REPORTES) {
+    if (SEED_DEMO) for (const r of REPORTES) {
       if (hayReporte.get(r.id)) continue;
       insertReporte.run({
         id: r.id, tipo: r.tipo, titulo: r.titulo, descripcion: r.descripcion,
@@ -1027,17 +1068,52 @@ async function aplicarSemilla(conexion = db) {
   return resumen;
 }
 
+// Detecta cuentas de ejemplo que siguen con la contraseña publicada del
+// repositorio. Se avisa sin mostrar el hash: son credenciales conocidas, así que
+// en una instalación real hay que cambiarlas o desactivarlas.
+function avisarCuentasDeEjemplo(conexion = db) {
+  const pendientes = [];
+  const ver = conexion.prepare("SELECT password FROM usuarios WHERE id = ?");
+  for (const u of USUARIOS) {
+    const fila = ver.get(u.id);
+    if (!fila) continue;
+    const hasheada = typeof u.password === "string" && /^\$2[aby]\$/.test(u.password);
+    if (hasheada && fila.password === u.password) pendientes.push(u.id);
+  }
+  if (pendientes.length) {
+    console.warn(
+      `  AVISO: ${pendientes.length} cuenta(s) de ejemplo conservan la contraseña ` +
+      `publicada del proyecto (${pendientes.join(", ")}). Cámbialas o desactívalas ` +
+      "antes de usar el sistema en producción."
+    );
+  }
+  return pendientes;
+}
+
 if (esNueva) {
-  console.log("Base de datos nueva: cargando datos de ejemplo…");
+  console.log("Base de datos nueva: preparando la base…");
 }
 const resumenSemilla = await aplicarSemilla();
-if (resumenSemilla.labs || resumenSemilla.usuarios || resumenSemilla.equipos || resumenSemilla.agenda || resumenSemilla.reportes || resumenSemilla.completados) {
+if (resumenSemilla.labs || resumenSemilla.usuarios || resumenSemilla.admin || resumenSemilla.equipos || resumenSemilla.agenda || resumenSemilla.reportes || resumenSemilla.completados) {
   console.log(
     `Semilla v${resumenSemilla.version}: ${resumenSemilla.labs} laboratorios, ` +
     `${resumenSemilla.equipos} equipos, ${resumenSemilla.usuarios} usuarios, ` +
-    `${resumenSemilla.agenda} reservas, ${resumenSemilla.reportes} reportes y ` +
-    `${resumenSemilla.completados} fichas completadas.`
+    `${resumenSemilla.admin} administrador(es), ${resumenSemilla.agenda} reservas, ` +
+    `${resumenSemilla.reportes} reportes y ${resumenSemilla.completados} fichas completadas.`
   );
+}
+
+// Sin semilla de ejemplo, la instalación tiene que quedar con un administrador
+// utilizable y sin credenciales de demostración conocidas.
+if (!SEED_DEMO) {
+  if (!db.prepare("SELECT id FROM usuarios WHERE rol = 'admin' AND activo = 1").get()) {
+    console.warn(
+      "  AVISO: no hay ninguna cuenta de administrador activa. Define LC_ADMIN_USER y " +
+      "LC_ADMIN_PASSWORD (y reinicia) para crear una; LC_SEED_DEMO=1 solo es para " +
+      "entornos de desarrollo."
+    );
+  }
+  avisarCuentasDeEjemplo();
 }
 
 export { DB_PATH, DB_DIR, db, abrirConexion, MIGRACIONES, SEMILLA_VERSION, aplicarSemilla };
