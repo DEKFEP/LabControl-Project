@@ -226,17 +226,18 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
   }
 
   function getPermisosPorRol(rol, nivel) {
-    const esProg  = rol === "programacion" || rol === "admin";
     const esAdm   = rol === "admin";
+    // El acceso técnico lo otorga el admin con el nivel de acceso, no el rol.
+    const esTec   = esAdm || nivel === "tecnico" || nivel === "total";
     return [
       { nombre:"Ver laboratorios",              desc:"Estado y disponibilidad básica",                ok: true },
       { nombre:"Ver mapa 2D",                   desc:"Plano del establecimiento",                     ok: true },
       { nombre:"Cambiar estado del laboratorio",desc:"Marcar disponible / ocupado / mantención",      ok: true },
       { nombre:"Agendar reserva",               desc:"Solicitar uso de un laboratorio",               ok: true },
-      { nombre:"Ver info técnica de hardware",  desc:"CPU, RAM, almacenamiento, red, IP, MAC",        ok: esProg },
-      { nombre:"Control remoto de equipos",     desc:"Encender, apagar, reiniciar, bloquear equipos", ok: esProg },
-      { nombre:"Ver reportes",                  desc:"Acceso a reportes de uso y fallas",             ok: esProg },
-      { nombre:"Generar reportes",              desc:"Crear nuevos reportes del sistema",             ok: esProg },
+      { nombre:"Ver info técnica de hardware",  desc:"CPU, RAM, almacenamiento, red, IP, MAC",        ok: esTec },
+      { nombre:"Control remoto de equipos",     desc:"Encender, apagar, reiniciar, bloquear equipos", ok: esTec },
+      { nombre:"Ver reportes",                  desc:"Acceso a reportes de uso y fallas",             ok: esTec },
+      { nombre:"Generar reportes",              desc:"Crear nuevos reportes del sistema",             ok: esTec },
       { nombre:"Gestionar usuarios",            desc:"Crear, editar y desactivar usuarios",           ok: esAdm },
       { nombre:"Configuración del sistema",     desc:"Ajustes avanzados de red, seguridad y sitio",   ok: esAdm },
     ];

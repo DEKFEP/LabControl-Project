@@ -358,6 +358,42 @@ test("laboratorios: cualquier autenticado cambia estado; campos técnicos exigen
   expect(denegado.status).toBe(403);
 });
 
+test("nivel de acceso: lo técnico depende de nivelAcceso, no del rol", async () => {
+  const tokenAdmin = await login();
+  // Un profesor de programación con acceso básico: no debe ver el hardware.
+  const basico = await request(app)
+    .post("/api/usuarios")
+    .set("Authorization", `Bearer ${tokenAdmin}`)
+    .send({ id: "prof_prog_basico", nombre: "Prog", apellido: "Basico", email: "prog.basico@liceo.cl", password: "ClaveTecnica1", rol: "programacion", nivelAcceso: "basico", area: "Programación" });
+  expect(basico.status).toBe(201);
+
+  // Un profesor de otra área con acceso técnico: sí debe verlo.
+  const tecnico = await request(app)
+    .post("/api/usuarios")
+    .set("Authorization", `Bearer ${tokenAdmin}`)
+    .send({ id: "prof_otro_tecnico", nombre: "Otro", apellido: "Tecnico", email: "otro.tecnico@liceo.cl", password: "ClaveTecnica1", rol: "otro_area", nivelAcceso: "tecnico", area: "Ciencias" });
+  expect(tecnico.status).toBe(201);
+
+  const tBasico = (await request(app).post("/api/login").send({ usuario: "prof_prog_basico", password: "ClaveTecnica1" })).body.token;
+  const labsBasico = (await request(app).get("/api/laboratorios").set("Authorization", `Bearer ${tBasico}`)).body;
+  const labBasico = Array.isArray(labsBasico) ? labsBasico[0] : labsBasico.data[0];
+  expect(labBasico).not.toHaveProperty("procesador");
+  expect(labBasico).not.toHaveProperty("red");
+
+  const tTecnico = (await request(app).post("/api/login").send({ usuario: "prof_otro_tecnico", password: "ClaveTecnica1" })).body.token;
+  const labsTecnico = (await request(app).get("/api/laboratorios").set("Authorization", `Bearer ${tTecnico}`)).body;
+  const labTecnico = Array.isArray(labsTecnico) ? labsTecnico[0] : labsTecnico.data[0];
+  expect(labTecnico).toHaveProperty("procesador");
+  expect(labTecnico).toHaveProperty("red");
+
+  // El rol de programación con acceso básico tampoco puede crear reportes.
+  const rep = await request(app)
+    .post("/api/reportes")
+    .set("Authorization", `Bearer ${tBasico}`)
+    .send({ tipo: "uso", titulo: "Reporte básico", descripcion: "No debería poder crearlo" });
+  expect(rep.status).toBe(403);
+});
+
 test("agenda: rechaza fecha pasada y solapamientos", async () => {
   const token = await login();
   const pasado = await request(app)
