@@ -509,7 +509,7 @@ function buildPanel(id) {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
           <div class="cfg-sys-card">
             <div class="cfg-sys-card__label">Versión del sistema</div>
-            <div class="cfg-sys-card__value">LabControl v4.4</div>
+            <div class="cfg-sys-card__value">LabControl v4.5</div>
           </div>
           <div class="cfg-sys-card">
             <div class="cfg-sys-card__label">Total laboratorios</div>
@@ -816,42 +816,21 @@ function restablecerConfiguracion() {
     .catch(() => showToast("No se pudo restablecer la configuración.", "error"));
 }
 
-// Menú de ayuda (?)
-(function iniciarMenuAyuda() {
-  const btn  = document.getElementById("btn-ayuda");
-  const menu = document.getElementById("cfg-ayuda-menu");
-  if (!btn || !menu) return;
-
-  const alternar = (abierto) => {
-    menu.classList.toggle("is-open", abierto);
-    btn.setAttribute("aria-expanded", String(abierto));
-  };
-
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    alternar(!menu.classList.contains("is-open"));
-  });
-
-  document.addEventListener("click", (e) => {
-    if (menu.classList.contains("is-open") && !menu.contains(e.target) && !btn.contains(e.target)) {
-      alternar(false);
-    }
-  });
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && menu.classList.contains("is-open")) {
-      alternar(false);
-      btn.focus();
-    }
-  });
-
-  menu.addEventListener("click", (e) => {
-    const opcion = e.target.closest("button")?.dataset.opcion;
-    if (!opcion) return;
-    alternar(false);
-    abrirAyuda(opcion);
-  });
-})();
+// Ayuda se abre desde la tarjeta de usuario, también en esta misma página.
+function abrirAyudaDesdePerfil() {
+  if (location.hash === "#ayuda") abrirAyuda("faq");
+}
+window.addEventListener("hashchange", abrirAyudaDesdePerfil);
+document.addEventListener("click", e => {
+  if (e.target.closest('a[href="configuracion.html#ayuda"]')) {
+    e.preventDefault();
+    history.replaceState(null, "", "#ayuda");
+    abrirAyuda("faq");
+  }
+  const opcion = e.target.closest("[data-ayuda-opcion]")?.dataset.ayudaOpcion;
+  if (opcion) abrirAyuda(opcion);
+});
+abrirAyudaDesdePerfil();
 
 function abrirAyuda(opcion) {
   const titulo = document.getElementById("modal-ayuda-titulo");
@@ -874,8 +853,12 @@ function abrirAyuda(opcion) {
     cuerpo.innerHTML = contenidoAcerca();
   }
 
+  cuerpo.insertAdjacentHTML("afterbegin", '<nav class="ayuda-tabs" aria-label="Temas de ayuda">' +
+    [["faq", "Ayuda / FAQ"], ["terminos", "Términos y condiciones"], ["acerca", "Acerca de"]].map(([id, label]) =>
+      `<button class="btn btn--sm" type="button" data-ayuda-opcion="${id}" aria-pressed="${id === opcion}">${label}</button>`
+    ).join("") + '</nav>');
   actualizarIconosLucide();
-  abrirModal("modal-ayuda");
+  if (modal?.style.display === "none") abrirModal("modal-ayuda");
 }
 
 function contenidoFaq() {
@@ -959,7 +942,7 @@ function contenidoAcerca() {
       <div style="font-size:.85rem;color:var(--color-text-muted)">Sistema de control y supervisión de los laboratorios de computación del liceo.</div>
       <div class="cfg-sys-card" style="margin:18px auto 0;max-width:260px">
         <div class="cfg-sys-card__label">Versión del sistema</div>
-        <div class="cfg-sys-card__value">LabControl v4.4</div>
+        <div class="cfg-sys-card__value">LabControl v4.5</div>
       </div>
       <div class="cfg-sys-card" style="margin:10px auto 0;max-width:260px">
         <div class="cfg-sys-card__label">Institución</div>

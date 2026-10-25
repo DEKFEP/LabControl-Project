@@ -13,8 +13,7 @@ const NAV_ITEMS_ALL = [
   { href: "index.html",          label: "Inicio",         icon: "layout-dashboard", roles: ["admin","programacion","otro_area"] },
   { href: "disponibilidad.html", label: "Disponibilidad", icon: "clock",            roles: ["admin","programacion","otro_area"] },
   { href: "equipos.html",        label: "Equipos",        icon: "monitor",          roles: ["admin","programacion","otro_area"] },
-  { href: "reportes.html",       label: "Reportes",       icon: "bar-chart-3",      roles: ["admin","programacion"] },
-  { href: "configuracion.html",  label: "Configuración",  icon: "settings",         roles: ["admin","programacion","otro_area"] }
+  { href: "reportes.html",       label: "Reportes",       icon: "bar-chart-3",      roles: ["admin","programacion"] }
 ];
 
 let __iconsObserver = null;
@@ -46,42 +45,125 @@ export function actualizarIconosLucide() {
   } catch (e) {}
 }
 
-// Pinta avatar, nombre, rol y correo del usuario en la barra lateral, y deja
-// listo el botón de cerrar sesión.
+// El perfil usa los datos de sesión y la foto que esta cuenta elige en este
+// navegador. No cambia el contrato de la API ni guarda tokens en localStorage.
 function pintarUsuario(sesion) {
   const userEl = document.querySelector(".sidebar__user");
-  if (!userEl || !sesion) return;
-
-  const avatarEl = userEl.querySelector(".avatar");
-  const nameEl   = userEl.querySelector(".name");
-  const roleEl   = userEl.querySelector(".role");
-
-  if (avatarEl) avatarEl.textContent = sesion.iniciales ?? (sesion.nombre?.slice(0, 2) ?? "??").toUpperCase();
-  if (nameEl)   nameEl.textContent   = `${sesion.nombre} ${sesion.apellido ?? ""}`.trim();
-  if (roleEl) {
-    const labels = { admin: "Administrador", programacion: "Prof. Programación", otro_area: "Profesor" };
-    roleEl.textContent = labels[sesion.rol] ?? sesion.rol;
+  const sidebar = document.querySelector(".sidebar");
+  if (!userEl || !sidebar || !sesion) return;
+  let card = sidebar.querySelector(".user-profile-card");
+  if (!card) {
+    userEl.innerHTML = `
+      <button class="user-avatar-btn" type="button" aria-label="Perfil de usuario" aria-controls="user-profile-card" aria-expanded="false" aria-haspopup="dialog" data-tooltip="Mi perfil">
+        <span class="avatar avatar--profile"></span>
+        <span class="sidebar-user-summary"><span class="name"></span><span class="email"></span></span>
+      </button>`;
+    card = document.createElement("div");
+    card.id = "user-profile-card";
+    card.className = "user-profile-card";
+    card.hidden = true;
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-label", "Mi perfil");
+    card.innerHTML = `
+      <div class="user-profile-card__info">
+        <span class="avatar avatar--profile user-profile-card__avatar"></span>
+        <div class="user-profile-card__details">
+          <div class="user-profile-card__name"></div>
+          <div class="user-profile-card__role"></div>
+          <div class="user-profile-card__email"></div>
+          <div class="user-profile-card__id"></div>
+          <button class="profile-photo-label" type="button">Cambiar foto</button>
+          <input id="profile-photo" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+          <span class="profile-photo-hint">Solo en este navegador</span>
+        </div>
+      </div>
+      <div class="user-profile-card__actions">
+        <a class="user-profile-card__btn" href="configuracion.html"><i data-lucide="settings"></i> Configuración</a>
+        <a class="user-profile-card__btn" href="configuracion.html#ayuda"><i data-lucide="help-circle"></i> Ayuda y Soporte</a>
+        <button class="user-profile-card__btn user-profile-card__btn--danger" type="button" id="profile-logout"><i data-lucide="log-out"></i> Cerrar Sesión</button>
+      </div>`;
+    sidebar.appendChild(card);
+    card.addEventListener("click", e => {
+      if (e.target.closest("a")) cerrarPerfil();
+    });
+    const avatarBtn = userEl.querySelector(".user-avatar-btn");
+    avatarBtn.addEventListener("click", () => {
+      const abrir = card.hidden;
+      cerrarNotificaciones();
+      card.hidden = !abrir;
+      avatarBtn.setAttribute("aria-expanded", String(abrir));
+      if (abrir) card.querySelector("a").focus();
+    });
+    card.querySelector("#profile-logout").addEventListener("click", () => AUTH.logout());
+    card.querySelector(".profile-photo-label").addEventListener("click", () => card.querySelector("#profile-photo").click());
+    card.querySelector("#profile-photo").addEventListener("change", guardarFotoPerfil);
+    document.addEventListener("click", e => {
+      if (!card.hidden && !card.contains(e.target) && !userEl.contains(e.target)) cerrarPerfil();
+    });
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && !card.hidden) cerrarPerfil(true);
+    });
   }
+  const nombre = `${sesion.nombre ?? ""} ${sesion.apellido ?? ""}`.trim();
+  const labels = { admin: "Administrador", programacion: "Prof. Programación", otro_area: "Profesor" };
+  userEl.querySelector(".name").textContent = nombre;
+  userEl.querySelector(".email").textContent = sesion.email ?? "";
+  card.querySelector(".user-profile-card__name").textContent = nombre;
+  card.querySelector(".user-profile-card__role").textContent = labels[sesion.rol] ?? sesion.rol;
+  card.querySelector(".user-profile-card__email").textContent = sesion.email ?? "";
+  card.querySelector(".user-profile-card__id").textContent = `Usuario: ${sesion.id}`;
+  actualizarFotoPerfil();
+  actualizarIconosLucide();
+}
 
-  // El correo acompaña al nombre en el menú del celular.
-  let emailEl = userEl.querySelector(".email");
-  if (!emailEl) {
-    const contenedor = roleEl?.parentElement;
-    if (contenedor) {
-      emailEl = document.createElement("div");
-      emailEl.className = "email";
-      contenedor.appendChild(emailEl);
-    }
+function cerrarPerfil(restaurarFoco = false) {
+  const card = document.querySelector(".user-profile-card");
+  const btn = document.querySelector(".user-avatar-btn");
+  if (card) card.hidden = true;
+  if (btn) {
+    btn.setAttribute("aria-expanded", "false");
+    if (restaurarFoco) btn.focus();
   }
-  if (emailEl) emailEl.textContent = sesion.email ?? "";
+}
 
-  if (!userEl.querySelector(".logout-btn")) {
-    const btn = document.createElement("button");
-    btn.className = "logout-btn";
-    btn.title = "Cerrar sesión";
-    btn.innerHTML = '<i data-lucide="log-out"></i>';
-    btn.addEventListener("click", () => AUTH.logout());
-    userEl.appendChild(btn);
+function actualizarFotoPerfil() {
+  let foto = "img/profile-default.svg";
+  try {
+    const guardada = localStorage.getItem(`lc_foto_${AUTH.getSesion()?.id}`);
+    if (guardada?.startsWith("data:image/jpeg;base64,")) foto = guardada;
+  } catch {}
+  document.querySelectorAll(".avatar--profile").forEach(el => {
+    el.innerHTML = `<img src="${esc(foto)}" alt="Foto de perfil" width="48" height="48" />`;
+  });
+}
+
+async function guardarFotoPerfil(e) {
+  const archivo = e.target.files?.[0];
+  e.target.value = "";
+  if (!archivo) return;
+  if (!["image/png", "image/jpeg", "image/webp"].includes(archivo.type) || archivo.size > 2 * 1024 * 1024) {
+    showToast("Elige una imagen PNG, JPG o WebP de hasta 2 MB.", "error");
+    return;
+  }
+  try {
+    const datos = await new Promise((resolve, reject) => {
+      const lector = new FileReader();
+      lector.onload = () => resolve(lector.result);
+      lector.onerror = reject;
+      lector.readAsDataURL(archivo);
+    });
+    const img = new Image();
+    img.src = datos;
+    await img.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 160;
+    const lado = Math.min(img.naturalWidth, img.naturalHeight);
+    canvas.getContext("2d").drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, 160, 160);
+    localStorage.setItem(`lc_foto_${AUTH.getSesion().id}`, canvas.toDataURL("image/jpeg", .85));
+    actualizarFotoPerfil();
+    showToast("Foto guardada en este navegador.", "success");
+  } catch {
+    showToast("No se pudo guardar la foto. Prueba otra imagen.", "error");
   }
 }
 
@@ -128,11 +210,11 @@ function ubicarBloqueUsuario() {
   } else {
     if (__bloqueUsuario.parentElement) __bloqueUsuario.remove();
     if (userEl.parentElement !== sidebar) sidebar.appendChild(userEl);
-    if (wrap && wrap.parentElement !== sidebar) sidebar.appendChild(wrap);
+    if (wrap) sidebar.insertBefore(wrap, userEl);
   }
 }
 
-MQ_MOVIL.addEventListener("change", ubicarBloqueUsuario);
+MQ_MOVIL.addEventListener("change", () => { cerrarPerfil(); cerrarNotificaciones(); ubicarBloqueUsuario(); });
 
 // Cierra la ventana de notificaciones (al plegar el menú móvil o al pulsar
 // fuera de ella).
@@ -159,7 +241,7 @@ export function renderSidebar(activeHref, requireAuth = true) {
   const items = NAV_ITEMS_ALL.filter((item) => item.roles.includes(rol));
 
   nav.innerHTML = items.map((item) => `
-    <a class="sidebar__link ${item.href === activeHref ? "is-active" : ""}" href="${item.href}">
+    <a class="sidebar__link ${item.href === activeHref ? "is-active" : ""}" href="${item.href}" aria-label="${item.label}" data-tooltip="${item.label}" ${item.href === activeHref ? 'aria-current="page"' : ""}>
       <span class="icon" aria-hidden="true"><i data-lucide="${item.icon}"></i></span>
       <span class="label">${item.label}</span>
     </a>
@@ -186,7 +268,7 @@ export function renderSidebar(activeHref, requireAuth = true) {
       sidebar.classList.toggle("nav-open", open);
       toggle.setAttribute("aria-expanded", String(open));
       toggle.innerHTML = open ? '<i data-lucide="x"></i>' : '<i data-lucide="menu"></i>';
-      if (!open) cerrarNotificaciones();
+      if (!open) { cerrarNotificaciones(); cerrarPerfil(); }
     };
 
     toggle.addEventListener("click", () =>
@@ -208,6 +290,7 @@ export function renderSidebar(activeHref, requireAuth = true) {
             t.innerHTML = '<i data-lucide="menu"></i>';
           }
           cerrarNotificaciones();
+          cerrarPerfil();
         }
       });
       __sidebarListenersAdded = true;
@@ -258,11 +341,11 @@ function inicializarNotificaciones() {
   const wrap = document.createElement("div");
   wrap.className = "notif-wrap";
   wrap.innerHTML = `
-    <button class="notif-btn" type="button" title="Notificaciones" aria-label="Notificaciones" aria-expanded="false">
+    <button class="notif-btn" type="button" title="Notificaciones" aria-label="Notificaciones" aria-controls="notif-panel" aria-expanded="false" data-tooltip="Notificaciones">
       <i data-lucide="bell"></i>
       <span class="notif-btn__badge" style="display:none"></span>
     </button>
-    <div class="notif-panel" style="display:none">
+    <div class="notif-panel" id="notif-panel" role="dialog" aria-label="Notificaciones" style="display:none">
       <div class="notif-panel__head">
         <span>Notificaciones</span>
         <span style="display:flex;gap:10px;align-items:center">
@@ -284,15 +367,20 @@ function inicializarNotificaciones() {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     const abierta = panel.style.display !== "none";
-    panel.style.display = abierta ? "none" : "block";
+    cerrarPerfil();
+    panel.style.display = abierta ? "none" : "flex";
     btn.setAttribute("aria-expanded", abierta ? "false" : "true");
     if (!abierta) renderListaNotificaciones();
   });
 
   document.addEventListener("click", (e) => {
-    if (panel.style.display === "block" && !panel.contains(e.target)) {
+    if (panel.style.display !== "none" && !panel.contains(e.target)) {
       cerrarNotificaciones();
     }
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && panel.style.display !== "none") { cerrarNotificaciones(); btn.focus(); }
   });
 
   wrap.querySelector(".notif-panel__todas").addEventListener("click", async () => {
@@ -424,7 +512,7 @@ export async function refrescarNotificaciones() {
     actualizarBadgeNotif();
     revisarRecordatoriosReserva(sesion);
     const panel = document.querySelector(".notif-panel");
-    if (panel && panel.style.display === "block") renderListaNotificaciones();
+    if (panel && panel.style.display !== "none") renderListaNotificaciones();
     return true;
   } catch {
     // Se propaga el fallo al sondeo para que espacie los intentos.
