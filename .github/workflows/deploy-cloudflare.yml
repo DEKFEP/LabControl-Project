@@ -136,7 +136,7 @@ jobs:
             # Cada pagina tiene que responder 200 y no 308: Pages recorta la
             # extension .html y manda a la ruta sin ella, lo que rompe los
             # enlaces y el service-worker. Lo evita `_redirects`.
-            for pagina in index login laboratorios disponibilidad mapa equipos reportes usuarios configuracion; do
+            for pagina in index login laboratorios disponibilidad equipos reportes usuarios configuracion; do
               codigo="$(curl -o /dev/null -s -w '%{http_code}' "https://$HOST/$pagina.html")"
               if [ "$codigo" = "200" ]; then
                 echo "OK   /$pagina.html"

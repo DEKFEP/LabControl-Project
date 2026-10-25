@@ -9,31 +9,6 @@ import { abrirModal, cerrarModal, esc, formatFecha, renderSidebar, showToast } f
   let labsCache = [];
   let usuariosCache = [];
 
-  function renderDispStats(labs) {
-    const el = document.getElementById("disp-stats");
-    const disponibles = labs.filter((l) => l.estado === "disponible").length;
-    const ocupados    = labs.filter((l) => l.estado === "ocupado").length;
-    const mantencion  = labs.filter((l) => l.estado === "mantencion").length;
-    el.innerHTML = `
-      <div class="card stat-card">
-        <div><div class="stat-card__label">Disponibles</div><div class="stat-card__value">${disponibles}</div></div>
-        <div class="stat-card__icon stat-card__icon--success"><i data-lucide="circle-check"></i></div>
-      </div>
-      <div class="card stat-card">
-        <div><div class="stat-card__label">Ocupados</div><div class="stat-card__value">${ocupados}</div></div>
-        <div class="stat-card__icon stat-card__icon--danger"><i data-lucide="ban"></i></div>
-      </div>
-      <div class="card stat-card">
-        <div><div class="stat-card__label">Mantención</div><div class="stat-card__value">${mantencion}</div></div>
-        <div class="stat-card__icon stat-card__icon--warning"><i data-lucide="wrench"></i></div>
-      </div>
-      <div class="card stat-card">
-        <div><div class="stat-card__label">Total</div><div class="stat-card__value">${labs.length}</div></div>
-        <div class="stat-card__icon stat-card__icon--primary"><i data-lucide="school"></i></div>
-      </div>
-    `;
-  }
-
   function renderTablaDisp(labs) {
     const tbody = document.getElementById("tabla-disponibilidad");
     tbody.innerHTML = labs.map((lab) => {
@@ -210,7 +185,6 @@ import { abrirModal, cerrarModal, esc, formatFecha, renderSidebar, showToast } f
       .then(() => cargarLaboratorios())
       .then((labs) => {
         labsCache = labs;
-        renderDispStats(labs);
         renderTablaDisp(labs);
         showToast(`Estado actualizado a "${ESTADOS[nuevoEstado].label}".`);
       })
@@ -289,7 +263,6 @@ import { abrirModal, cerrarModal, esc, formatFecha, renderSidebar, showToast } f
     labsCache = labs;
     usuariosCache = usuarios;
     guardarAgenda(agenda);
-    renderDispStats(labs);
     renderTablaDisp(labs);
     renderTablaAgenda(agendaCache, labs);
     renderSemana();

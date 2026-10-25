@@ -15,8 +15,8 @@
 <link rel="apple-touch-icon" href="img/icon-192.png" />
 <title>Inicio · Insuco LabControl</title>
 <link rel="icon" type="image/png" href="img/logo-insuco.png" />
-<link rel="stylesheet" href="css/style.css?v=4.2.2" />
-<script src="js/theme.js?v=4.2.2"></script>
+<link rel="stylesheet" href="css/style.css?v=4.4" />
+<script src="js/theme.js?v=4.4"></script>
 </head>
 <body>
   <a class="skip-nav" href="#main-content">Saltar al contenido</a>
@@ -49,20 +49,8 @@
     <!-- Resumen numérico -->
     <div class="stat-grid" id="stat-cards" style="margin-bottom:20px"></div>
 
-    <!-- Estado en tiempo real + distribución -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:20px">
-      <div class="card">
-        <div class="section-title">Estado en tiempo real</div>
-        <div id="status-list"></div>
-      </div>
-      <div class="card">
-        <div class="section-title">Distribución de equipos</div>
-        <div style="padding:20px" id="donut"></div>
-      </div>
-    </div>
-
     <!-- Accesos rápidos a laboratorios -->
-    <div class="section-title" style="padding:0 4px 10px">Laboratorios</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px 10px"><span style="font-weight:800;font-size:1.02rem;letter-spacing:-.01em">Laboratorios</span><a class="btn btn--sm" href="laboratorios.html">Ver más →</a></div>
     <div class="lab-grid" id="labs-home"></div>
   </main>
 </div>
@@ -79,9 +67,9 @@
   </div>
 </div>
 
-<script type="module" src="js/data.js?v=4.2.2"></script>
-<script src="js/vendor/lucide.min.js?v=4.2.2"></script>
-<script type="module" src="js/app.js?v=4.2.2"></script>
-<script type="module" src="js/index.js?v=4.2.2"></script>
+<script type="module" src="js/data.js?v=4.4"></script>
+<script src="js/vendor/lucide.min.js?v=4.4"></script>
+<script type="module" src="js/app.js?v=4.4"></script>
+<script type="module" src="js/index.js?v=4.4"></script>
 </body>
 </html>

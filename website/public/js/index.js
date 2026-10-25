@@ -1,6 +1,6 @@
 /* Imports (ES modules) */
 import { cargarLaboratorios } from "./data.js";
-import { esc, renderDonut, renderLabGrid, renderSidebar, renderStatusList, renderStatCards, showToast } from "./app.js";
+import { esc, renderLabGrid, renderSidebar, renderStatCards, showToast } from "./app.js";
 
 
   const sesion = renderSidebar("index.html");
@@ -17,8 +17,6 @@ import { esc, renderDonut, renderLabGrid, renderSidebar, renderStatusList, rende
   cargarLaboratorios().then((labs) => {
     labsCache = labs;
     renderStatCards(labs, "stat-cards");
-    renderStatusList(labs, "status-list");
-    renderDonut(labs, "donut");
     renderLabGrid(labs, "labs-home", { linkTo: "laboratorios.html" });
   }).catch(() => showToast("No se pudieron cargar los laboratorios.", "error"));
 
