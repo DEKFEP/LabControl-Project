@@ -50,10 +50,9 @@ test("la campana está dentro de la sidebar y su panel cabe en escritorio", asyn
   expect(panel.y + panel.height).toBeLessThanOrEqual(800);
 });
 
-test("el menú móvil mantiene accesibles la navegación y las notificaciones", async ({ page }) => {
+test("la barra móvil mantiene accesibles la navegación y las notificaciones", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await entrar(page);
-  await page.locator(".sidebar__toggle").click();
   await expect(page.getByRole("link", { name: "Disponibilidad", exact: true })).toBeVisible();
   await page.locator(".notif-btn").click();
   await expect(page.locator(".notif-panel")).toBeVisible();
@@ -133,18 +132,18 @@ test("foto local del perfil persiste al recargar y cerrar sesión funciona", asy
   await expect(page).toHaveURL(/login\.html/);
 });
 
-test("perfil móvil cabe en pantalla y se cierra al plegar el menú", async ({ page }) => {
+test("perfil móvil cabe encima de la barra inferior y se cierra con Escape", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await entrar(page);
-  await page.locator(".sidebar__toggle").click();
   await page.locator(".user-avatar-btn").click();
   const tarjeta = page.locator(".user-profile-card");
   await expect(tarjeta).toBeVisible();
   const caja = await tarjeta.boundingBox();
   expect(caja.x).toBeGreaterThanOrEqual(0);
   expect(caja.x + caja.width).toBeLessThanOrEqual(390);
-  expect(caja.y + caja.height).toBeLessThanOrEqual(844);
-  await page.locator(".sidebar__toggle").click();
+  const barra = await page.locator(".sidebar").boundingBox();
+  expect(caja.y + caja.height).toBeLessThanOrEqual(barra.y);
+  await page.keyboard.press("Escape");
   await expect(tarjeta).toBeHidden();
 });
 
@@ -155,7 +154,7 @@ test("paleta verde, cabecera de LabControl y superficies verificadas en todas la
   await page.goto("/login.html");
   const acceso = await page.locator(".login-card").boundingBox();
   expect(Math.abs(acceso.x + acceso.width / 2 - 640)).toBeLessThan(2);
-  await page.screenshot({ path: testInfo.outputPath("4.6-login.png"), fullPage: true, animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.8-login.png"), fullPage: true, animations: "disabled" });
   await entrar(page);
   const vistas = [
     ["index.html", "#labs-home .lab-card", "inicio"],
@@ -177,19 +176,21 @@ test("paleta verde, cabecera de LabControl y superficies verificadas en todas la
       return ["--color-primary", "--color-bg", "--color-surface", "--color-text", "--radius"].map(v => css.getPropertyValue(v).trim().toUpperCase());
     });
     expect(estilo).toEqual(["#059669", "#EAF7F0", "#FFFFFF", "#18251F", "6PX"]);
-    await page.screenshot({ path: testInfo.outputPath(`4.6-${nombre}.png`), fullPage: true, animations: "disabled" });
+    await page.screenshot({ path: testInfo.outputPath(`4.8-${nombre}.png`), fullPage: true, animations: "disabled" });
   }
   await page.locator(".user-avatar-btn").click();
-  await page.screenshot({ path: testInfo.outputPath("4.6-perfil.png"), animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.8-perfil.png"), animations: "disabled" });
   await page.keyboard.press("Escape");
   await page.evaluate(() => { localStorage.setItem("lc_tema", "oscuro"); });
   await page.goto("/index.html");
   await expect(page.locator("#labs-home .lab-card")).toHaveCount(5);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "oscuro");
-  await page.screenshot({ path: testInfo.outputPath("4.6-oscuro.png"), fullPage: true, animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.8-oscuro.png"), fullPage: true, animations: "disabled" });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator(".sidebar__toggle").click();
+  await page.screenshot({ path: testInfo.outputPath("4.8-movil.png"), animations: "disabled" });
   await page.locator(".user-avatar-btn").click();
-  await page.screenshot({ path: testInfo.outputPath("4.6-movil.png"), fullPage: true, animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.8-movil-perfil.png"), animations: "disabled" });
+  await page.locator(".notif-btn").click();
+  await page.screenshot({ path: testInfo.outputPath("4.8-movil-notificaciones.png"), animations: "disabled" });
   expect(errores).toEqual([]);
 });
