@@ -23,7 +23,8 @@ test("login como administrador y el dashboard carga los datos", async ({ page })
 
   await expect(page.locator("#saludo-titulo")).toContainText("Administrador", { timeout: 8000 });
   await expect(page.locator("#stat-cards .stat-card")).toHaveCount(5, { timeout: 8000 });
-  await expect(page.locator(".sidebar__user .name")).not.toBeEmpty();
+  await page.getByRole("button", { name: "Perfil de usuario", exact: true }).click();
+  await expect(page.locator(".user-profile-card__name")).toHaveText("Administrador Sistema");
 });
 
 test("configuracion.html muestra la versión vigente", async ({ page }) => {
@@ -568,7 +569,7 @@ test.describe("celular: el usuario y las notificaciones viven dentro del menú",
 
     const cabecera = page.locator(".sidebar__me");
     await expect(cabecera).toBeVisible();
-    await expect(cabecera.locator(".avatar")).toHaveText("AD");
+    await expect(cabecera.locator(".avatar img")).toBeVisible();
     await expect(cabecera.locator(".name")).toHaveText("Administrador Sistema");
     await expect(cabecera.locator(".email")).toHaveText("admin@liceo.cl");
 

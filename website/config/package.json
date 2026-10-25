@@ -1,8 +1,8 @@
 {
   "name": "labcontrol",
-  "version": "4.4",
+  "version": "4.5",
   "private": true,
-  "description": "LabControl 4.4 - Monorepo de calidad (tests, lint, typecheck). El sitio vive en website/ y su backend en website/backend.",
+  "description": "LabControl 4.5 - Monorepo de calidad (tests, lint, typecheck). El sitio vive en website/ y su backend en website/backend.",
   "scripts": {
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:e2e": "playwright test",

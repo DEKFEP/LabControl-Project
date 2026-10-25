@@ -1,6 +1,6 @@
 /* service-worker.js — caché offline: red para la API, caché para estáticos. */
 
-const CACHE_NAME = "labcontrol-v4.4";
+const CACHE_NAME = "labcontrol-v4.5";
 // Datos de inventario para poder consultarlos sin conexión. Solo se guardan
 // respuestas de lectura que NO son personales (laboratorios, equipos y su
 // inventario), de modo que en un equipo compartido nadie vea datos de la sesión
@@ -21,18 +21,18 @@ const PRECACHE_URLS = [
   "usuarios.html",
   "reportes.html",
   "configuracion.html",
-  "css/style.css?v=4.4",
-  "js/theme.js?v=4.4",
-  "js/app.js?v=4.4",
-  "js/data.js?v=4.4",
-  "js/index.js?v=4.4",
-  "js/login.js?v=4.4",
-  "js/laboratorios.js?v=4.4",
-  "js/equipos.js?v=4.4",
-  "js/disponibilidad.js?v=4.4",
-  "js/reportes.js?v=4.4",
-  "js/usuarios.js?v=4.4",
-  "js/configuracion.js?v=4.4",
+  "css/style.css?v=4.5",
+  "js/theme.js?v=4.5",
+  "js/app.js?v=4.5",
+  "js/data.js?v=4.5",
+  "js/index.js?v=4.5",
+  "js/login.js?v=4.5",
+  "js/laboratorios.js?v=4.5",
+  "js/equipos.js?v=4.5",
+  "js/disponibilidad.js?v=4.5",
+  "js/reportes.js?v=4.5",
+  "js/usuarios.js?v=4.5",
+  "js/configuracion.js?v=4.5",
   "js/app.js",
   "js/data.js",
   "js/index.js",
@@ -43,8 +43,9 @@ const PRECACHE_URLS = [
   "js/reportes.js",
   "js/usuarios.js",
   "js/configuracion.js",
-  "js/vendor/lucide.min.js?v=4.4",
+  "js/vendor/lucide.min.js?v=4.5",
   "manifest.webmanifest",
+  "img/profile-default.svg",
   "img/logo-insuco.png",
   "img/icon-192.png",
   "img/icon-512.png",

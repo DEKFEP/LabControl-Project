@@ -21,7 +21,7 @@ env:
 
 jobs:
   deploy:
-    name: Publicar la web y la API en un solo despliegue
+    name: Publicar la web y comprobar compatibilidad de la API
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -62,12 +62,32 @@ jobs:
             --branch master \
             --commit-dirty=true
 
+      # Según AGENTS.md, la versión de /api/salud solo cambia cuando cambia el
+      # comportamiento de la API. Los cambios de interfaz, de package.json y del
+      # mensaje de arranque no necesitan un despliegue de Railway.
+      - name: Detectar cambios de versión de API
+        id: api
+        env:
+          ANTES: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          actual="$(sed -n 's/.*version: *"\([0-9.]*\)".*/\1/p' website/backend/server.js)"
+          anterior="$(git show "${ANTES}:website/backend/server.js" 2>/dev/null | sed -n 's/.*version: *"\([0-9.]*\)".*/\1/p' || true)"
+          [ -n "$actual" ] || { echo "::error::No se pudo leer la versión de API."; exit 1; }
+          if [ "$actual" = "$anterior" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "La API sigue en $actual: este cambio de web no necesita redesplegar Railway."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # La API no se puede publicar junto con la web (node:sqlite necesita disco),
       # asi que vive en Railway. Con el despliegue automatico del servicio apagado
       # y sin forma de elegir el commit por la API publica, aqui se sube el arbol
       # actual con la CLI (`railway up`), que crea un despliegue nuevo desde este
       # commit. Asi la API queda al dia con cada push, sin tocar el panel.
       - name: Desplegar la API en Railway
+        if: github.event_name == 'workflow_dispatch' || steps.api.outputs.changed == 'true'
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           PROYECTO_ID: ${{ vars.RAILWAY_PROJECT_ID }}
