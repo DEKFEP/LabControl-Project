@@ -143,7 +143,7 @@ test("perfil móvil cabe en pantalla y se cierra al plegar el menú", async ({ p
   await expect(tarjeta).toBeHidden();
 });
 
-test("paleta verde, cabecera sin logo y superficies verificadas en todas las vistas", async ({ page }, testInfo) => {
+test("paleta verde, cabecera de LabControl y superficies verificadas en todas las vistas", async ({ page }, testInfo) => {
   test.setTimeout(90000);
   const errores = [];
   page.on("pageerror", e => errores.push(e.message));

@@ -10,10 +10,10 @@
   "theme_color": "#059669",
   "icons": [
     {
-      "src": "img/app-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "img/labcontrol.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
