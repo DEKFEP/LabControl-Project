@@ -427,7 +427,7 @@ function inicializarNotificaciones() {
 
 /* Notificaciones del sistema */
 
-const NOTIF_ICONO = "img/app-icon.svg";
+const NOTIF_ICONO = "img/labcontrol.png";
 
 async function registrarServiceWorker() {
   if (!("serviceWorker" in navigator)) return null;

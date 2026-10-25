@@ -2579,7 +2579,7 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   .user-profile-card { position: fixed; top: 76px; bottom: auto; left: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 92px); }
 }
 
-/* Cabecera sin logo y superficies planas con la paleta verde. */
+/* Cabecera de LabControl y superficies planas con la paleta verde. */
 :root, [data-theme="claro"] {
   --color-dark: #064E3B;
   --color-link: #064E3B;
@@ -2599,7 +2599,8 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   border-bottom: 1px solid var(--color-border);
   z-index: 80;
 }
-.app-brand a { color: var(--color-text); font-family: "Outfit", "Segoe UI", sans-serif; font-size: 1.2rem; font-weight: 800; letter-spacing: -.03em; text-decoration: none; }
+.app-brand a { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text); font-family: "Outfit", "Segoe UI", sans-serif; font-size: 1.2rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.2; text-decoration: none; }
+.app-brand__icon { display: block; width: 32px; height: 32px; flex-shrink: 0; object-fit: contain; }
 .app-layout { padding-top: 56px; }
 .sidebar { top: 56px; height: calc(100dvh - 56px); border-color: var(--color-border); }
 .main-content { min-width: 0; min-height: calc(100dvh - 56px); background: var(--color-bg); }
@@ -2620,6 +2621,7 @@ a { color: var(--color-link); }
 .notif-panel { max-height: min(420px, calc(100dvh - 80px)); }
 @media (max-width: 860px) {
   .app-brand { padding: 0 16px; }
+  .app-brand__icon { width: 28px; height: 28px; }
   .sidebar { height: 0; min-height: 0; padding: 0; border: 0; gap: 0; box-shadow: none; }
   .sidebar__toggle { position: fixed; top: 10px; right: 12px; margin: 0; background: var(--color-dark); color: #FFFFFF; }
   .sidebar__nav { top: 0; }
