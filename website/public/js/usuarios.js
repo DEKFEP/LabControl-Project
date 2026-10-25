@@ -231,7 +231,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
     const esTec   = esAdm || nivel === "tecnico" || nivel === "total";
     return [
       { nombre:"Ver laboratorios",              desc:"Estado y disponibilidad básica",                ok: true },
-      { nombre:"Ver mapa 2D",                   desc:"Plano del establecimiento",                     ok: true },
       { nombre:"Cambiar estado del laboratorio",desc:"Marcar disponible / ocupado / mantención",      ok: true },
       { nombre:"Agendar reserva",               desc:"Solicitar uso de un laboratorio",               ok: true },
       { nombre:"Ver info técnica de hardware",  desc:"CPU, RAM, almacenamiento, red, IP, MAC",        ok: esTec },

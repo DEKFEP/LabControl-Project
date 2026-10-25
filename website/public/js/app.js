@@ -11,12 +11,9 @@ import {
 
 const NAV_ITEMS_ALL = [
   { href: "index.html",          label: "Inicio",         icon: "layout-dashboard", roles: ["admin","programacion","otro_area"] },
-  { href: "laboratorios.html",   label: "Laboratorios",   icon: "building-2",       roles: ["admin","programacion","otro_area"] },
   { href: "disponibilidad.html", label: "Disponibilidad", icon: "clock",            roles: ["admin","programacion","otro_area"] },
-  { href: "mapa.html",           label: "Mapa 2D",        icon: "map",              roles: ["admin","programacion","otro_area"] },
   { href: "equipos.html",        label: "Equipos",        icon: "monitor",          roles: ["admin","programacion","otro_area"] },
   { href: "reportes.html",       label: "Reportes",       icon: "bar-chart-3",      roles: ["admin","programacion"] },
-  { href: "usuarios.html",       label: "Usuarios",       icon: "users",            roles: ["admin","programacion","otro_area"] },
   { href: "configuracion.html",  label: "Configuración",  icon: "settings",         roles: ["admin","programacion","otro_area"] }
 ];
 
