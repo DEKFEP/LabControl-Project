@@ -567,20 +567,35 @@ test.describe("celular: barra inferior y campana en la cabecera", () => {
     await expect(page.locator("#tabla-disponibilidad tr")).toHaveCount(5);
   });
 
-  test("el perfil inferior abre su tarjeta con foto, nombre y correo", async ({ page }) => {
+  test("el usuario abre Configuración directamente y permite usar ayuda y cerrar sesión", async ({ page }, testInfo) => {
     await login(page, CRED.admin.user, CRED.admin.pass);
     await expect(page.locator(".user-avatar-btn img")).toBeVisible();
+    await expect(page.locator(".user-avatar-btn")).not.toHaveAttribute("aria-haspopup", "dialog");
     await page.locator(".user-avatar-btn").click();
-    const tarjeta = page.locator(".user-profile-card");
-    await expect(tarjeta).toContainText("Administrador Sistema");
-    await expect(tarjeta).toContainText("admin@liceo.cl");
-    const card = await tarjeta.boundingBox();
-    const barra = await page.locator(".sidebar").boundingBox();
-    expect(card.y).toBeGreaterThanOrEqual(56);
-    expect(card.y + card.height).toBeLessThanOrEqual(barra.y);
-    await page.keyboard.press("Escape");
-    await expect(tarjeta).toBeHidden();
-    await expect(page.locator(".user-avatar-btn")).toBeFocused();
+    await expect(page).toHaveURL(/configuracion\.html$/);
+    await expect(page.locator("#panel-perfil")).toBeVisible();
+    await expect(page.locator("#panel-perfil")).toContainText("Administrador Sistema");
+    await expect(page.locator(".user-profile-card")).toBeHidden();
+    await expect(page.locator(".user-avatar-btn")).toHaveAttribute("aria-current", "page");
+    await page.setViewportSize({ width: 320, height: 568 });
+    const ayuda = await page.locator("#btn-ayuda-movil").boundingBox();
+    const guardar = await page.locator("#btn-guardar-cfg").boundingBox();
+    expect(ayuda.x + ayuda.width).toBeLessThanOrEqual(guardar.x);
+    expect(Math.abs(ayuda.y - guardar.y)).toBeLessThan(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("configuracion-movil-320.png"), animations: "disabled" });
+    await page.locator("#btn-ayuda-movil").click();
+    await expect(page.locator("#modal-ayuda")).toBeVisible();
+    await expect(page.locator("#modal-ayuda-titulo")).toHaveText("Ayuda / FAQ");
+    await page.locator("#modal-ayuda .modal__close").click();
+    await page.locator("#btn-cerrar-sesion-perfil").scrollIntoViewIfNeeded();
+    const cerrar = await page.locator("#btn-cerrar-sesion-perfil").boundingBox();
+    const campo = await page.locator("#p-especialidad").boundingBox();
+    expect(cerrar.y).toBeGreaterThanOrEqual(campo.y + campo.height);
+    expect(cerrar.y + cerrar.height).toBeLessThanOrEqual((await page.locator(".sidebar").boundingBox()).y);
+    await page.screenshot({ path: testInfo.outputPath("perfil-cerrar-sesion-movil-320.png"), animations: "disabled" });
+    await page.locator("#btn-cerrar-sesion-perfil").click();
+    await expect(page).toHaveURL(/login\.html/);
   });
 
   test("la campana sin recuadro está arriba a la derecha y sus avisos caben en pantalla", async ({ page }) => {
@@ -601,8 +616,10 @@ test.describe("celular: barra inferior y campana en la cabecera", () => {
     expect(avisos.x + avisos.width).toBeLessThanOrEqual(390);
     expect(avisos.y + avisos.height).toBeLessThanOrEqual(barra.y);
     await page.locator(".user-avatar-btn").click();
+    await expect(page).toHaveURL(/configuracion\.html$/);
     await expect(panel).toBeHidden();
-    await expect(page.locator(".user-profile-card")).toBeVisible();
+    await expect(page.locator(".user-profile-card")).toBeHidden();
+    await expect(page.locator("#panel-perfil")).toBeVisible();
   });
 
   test("al pasar a PC la campana vuelve debajo de las secciones sin duplicarse", async ({ page }) => {
