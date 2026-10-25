@@ -546,76 +546,88 @@ test("2FA: el admin activa, verifica y desactiva en Configuración", async ({ pa
   }
 });
 
-test.describe("celular: el usuario y las notificaciones viven dentro del menú", () => {
+test.describe("celular: barra inferior y campana en la cabecera", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("la barra superior queda solo con el botón de menú", async ({ page }) => {
+  test("las secciones están abajo en el mismo orden y el perfil a la derecha", async ({ page }) => {
     await login(page, CRED.admin.user, CRED.admin.pass);
-
-    // Con el menú plegado, ni el usuario ni la campana ocupan la barra superior.
-    await expect(page.locator(".sidebar__toggle")).toBeVisible();
-    await expect(page.locator(".sidebar__user")).toBeHidden();
-    await expect(page.locator(".notif-btn")).toBeHidden();
-
+    await expect(page.locator(".sidebar__toggle, .sidebar__me")).toHaveCount(0);
+    const enlaces = page.locator("#sidebar-nav .sidebar__link");
+    await expect(enlaces).toHaveText(["Inicio", "Disponibilidad", "Equipos", "Reportes"]);
     const barra = await page.locator(".sidebar").boundingBox();
-    const ancho = await page.evaluate(() => document.documentElement.clientWidth);
-    expect(barra.width).toBe(ancho);
+    expect(barra.x).toBe(0);
+    expect(barra.width).toBe(390);
+    expect(barra.y + barra.height).toBeCloseTo(844, 0);
+    const ultimo = await enlaces.last().boundingBox();
+    const perfil = await page.locator(".user-avatar-btn").boundingBox();
+    expect(perfil.x).toBeGreaterThanOrEqual(ultimo.x + ultimo.width - 1);
+    await expect(page.locator(".sidebar-user-label")).toHaveText("Perfil");
+    await page.getByRole("link", { name: "Disponibilidad", exact: true }).click();
+    await expect(page.getByRole("link", { name: "Disponibilidad", exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("#tabla-disponibilidad tr")).toHaveCount(5);
   });
 
-  test("el menú muestra foto, nombre, correo y la campana a un lado", async ({ page }) => {
+  test("el perfil inferior abre su tarjeta con foto, nombre y correo", async ({ page }) => {
     await login(page, CRED.admin.user, CRED.admin.pass);
-
-    await page.click(".sidebar__toggle");
-
-    const cabecera = page.locator(".sidebar__me");
-    await expect(cabecera).toBeVisible();
-    await expect(cabecera.locator(".avatar img")).toBeVisible();
-    await expect(cabecera.locator(".name")).toHaveText("Administrador Sistema");
-    await expect(cabecera.locator(".email")).toHaveText("admin@liceo.cl");
-
-    // La campana está en la cabecera, a un lado del usuario, y no en la barra.
-    const campana = cabecera.locator(".notif-btn");
-    await expect(campana).toBeVisible();
-    const avatar = await cabecera.locator(".avatar").boundingBox();
-    const boton = await campana.boundingBox();
-    expect(boton.x).toBeGreaterThan(avatar.x + avatar.width);
-
-    // Separación entre la info del usuario y el resto de botones del menú.
-    const separacion = await cabecera.evaluate((el) => getComputedStyle(el).borderBottomWidth);
-    expect(Number.parseFloat(separacion)).toBeGreaterThan(0);
-    const ultimoEnlace = await page.locator(".sidebar__link").last().boundingBox();
-    const cabeceraBox = await cabecera.boundingBox();
-    expect(cabeceraBox.y + cabeceraBox.height).toBeLessThan(ultimoEnlace.y);
+    await expect(page.locator(".user-avatar-btn img")).toBeVisible();
+    await page.locator(".user-avatar-btn").click();
+    const tarjeta = page.locator(".user-profile-card");
+    await expect(tarjeta).toContainText("Administrador Sistema");
+    await expect(tarjeta).toContainText("admin@liceo.cl");
+    const card = await tarjeta.boundingBox();
+    const barra = await page.locator(".sidebar").boundingBox();
+    expect(card.y).toBeGreaterThanOrEqual(56);
+    expect(card.y + card.height).toBeLessThanOrEqual(barra.y);
+    await page.keyboard.press("Escape");
+    await expect(tarjeta).toBeHidden();
+    await expect(page.locator(".user-avatar-btn")).toBeFocused();
   });
 
-  test("las notificaciones se abren dentro del menú y se cierran al plegarlo", async ({ page }) => {
+  test("la campana sin recuadro está arriba a la derecha y sus avisos caben en pantalla", async ({ page }) => {
     await login(page, CRED.admin.user, CRED.admin.pass);
-
-    await page.click(".sidebar__toggle");
-    const panel = page.locator(".sidebar__me .notif-panel");
-    await expect(panel).toBeHidden();
-
-    await page.click(".sidebar__me .notif-btn");
+    const boton = page.locator(".app-brand .notif-btn");
+    await expect(boton).toBeVisible();
+    const caja = await boton.boundingBox();
+    expect(caja.x).toBeGreaterThan(300);
+    expect(caja.y).toBeGreaterThanOrEqual(0);
+    expect(caja.y + caja.height).toBeLessThanOrEqual(56);
+    expect(await boton.evaluate(el => ({ borde: getComputedStyle(el).borderWidth, fondo: getComputedStyle(el).backgroundColor }))).toEqual({ borde: "0px", fondo: "rgba(0, 0, 0, 0)" });
+    await boton.click();
+    const panel = page.locator(".notif-panel");
     await expect(panel).toBeVisible();
-
-    // Plegar el menú también cierra la ventana de notificaciones.
-    await page.click(".sidebar__toggle");
-    await expect(page.locator(".sidebar__me")).toBeHidden();
-    await page.click(".sidebar__toggle");
+    const avisos = await panel.boundingBox();
+    const barra = await page.locator(".sidebar").boundingBox();
+    expect(avisos.x).toBeGreaterThanOrEqual(0);
+    expect(avisos.x + avisos.width).toBeLessThanOrEqual(390);
+    expect(avisos.y + avisos.height).toBeLessThanOrEqual(barra.y);
+    await page.locator(".user-avatar-btn").click();
     await expect(panel).toBeHidden();
+    await expect(page.locator(".user-profile-card")).toBeVisible();
   });
 
-  test("al volver a escritorio el usuario y la campana salen del menú", async ({ page }) => {
+  test("al pasar a PC la campana vuelve debajo de las secciones sin duplicarse", async ({ page }) => {
     await login(page, CRED.admin.user, CRED.admin.pass);
-
+    await expect(page.locator(".app-brand .notif-btn")).toBeVisible();
     await page.setViewportSize({ width: 1280, height: 800 });
-    await expect(page.locator(".sidebar__me")).toBeHidden();
-    await expect(page.locator(".sidebar__user")).toBeVisible();
-    await expect(page.locator(".notif-btn")).toBeVisible();
-
-    // Y al plegar de nuevo, el menú vuelve a armar la cabecera del desplegable.
+    await expect(page.locator("#sidebar-nav .notif-btn")).toBeVisible();
+    await expect(page.locator(".notif-btn")).toHaveCount(1);
+    await expect(page.locator(".sidebar-user-label")).toBeHidden();
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.click(".sidebar__toggle");
-    await expect(page.locator(".sidebar__me .sidebar__user")).toBeVisible();
+    await expect(page.locator(".app-brand .notif-btn")).toBeVisible();
+    await expect(page.locator(".sidebar__user")).toBeVisible();
+    await expect(page.locator(".notif-btn")).toHaveCount(1);
+  });
+
+  test("otra área conserva sus permisos y el contenido no queda tapado por la barra", async ({ page }) => {
+    await login(page, CRED.camila.user, CRED.camila.pass);
+    await expect(page.locator("#sidebar-nav .sidebar__link")).toHaveText(["Inicio", "Disponibilidad", "Equipos"]);
+    await expect(page.getByRole("link", { name: "Reportes", exact: true })).toHaveCount(0);
+    const enlace = page.locator("#labs-home .lab-card__link").last();
+    await enlace.scrollIntoViewIfNeeded();
+    const ultimo = await enlace.boundingBox();
+    const barra = await page.locator(".sidebar").boundingBox();
+    expect(ultimo.y + ultimo.height).toBeLessThanOrEqual(barra.y);
+    await page.setViewportSize({ width: 320, height: 568 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 });

@@ -308,7 +308,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
    no genera caja (`display: contents`): el usuario sigue al pie de la barra
    lateral y la campana en su esquina. En el celular se convierte en la
    cabecera del menú desplegable (ver @media max-width: 860px). */
-.sidebar__me { display: contents; }
 
 .sidebar__user {
   display: flex;
@@ -355,8 +354,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   transition: background .2s, color .2s;
 }
 .logout-btn:hover { background: rgba(239, 68, 68, .2); color: #fda4af; }
-
-.sidebar__toggle { display: none; }
 
 /* Contenido */
 .main-content {
@@ -1826,104 +1823,6 @@ tbody tr:hover { background: var(--row-hover); }
 @media (max-width: 860px) {
   .app-layout { flex-direction: column; }
 
-  .sidebar {
-    width: 100%;
-    height: auto;
-    position: sticky;
-    top: 0;
-    z-index: 90;
-    flex-direction: row;
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: 6px;
-    padding: 6px 10px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
-  }
-
-  /* La barra superior se queda solo con el logo y el botón de menú: el usuario
-     y la campana de notificaciones pasan al desplegable (cabecera de .sidebar__me). */
-  .sidebar__me {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 10px;
-    padding: 2px 4px 12px;
-    margin: 0 0 4px;
-    border-bottom: 1px solid rgba(255, 255, 255, .16);
-  }
-  .sidebar__me .sidebar__user {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin: 0;
-    padding: 0;
-    gap: 10px;
-    background: transparent;
-    border: none;
-  }
-  .sidebar__me .sidebar__user > div:not(.avatar) { min-width: 0; }
-  .sidebar__me .sidebar__user .name {
-    font-size: .82rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .sidebar__me .sidebar__user .role { display: none; }
-  .sidebar__me .sidebar__user .email {
-    display: block;
-    font-size: .7rem;
-    line-height: 1.3;
-    color: rgba(255, 255, 255, .72);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .sidebar__me .logout-btn { padding: 5px; }
-
-  /* La campana acompaña al usuario; su panel se despliega dentro del menú */
-  .sidebar__me .notif-wrap { display: contents; position: static; }
-  .sidebar__me .notif-btn { order: 2; }
-
-  /* Botón hamburguesa */
-  .sidebar__toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 42px;
-    height: 42px;
-    margin-left: auto;
-    flex-shrink: 0;
-    background: rgba(255, 255, 255, .08);
-    border: 1px solid rgba(255, 255, 255, .18);
-    border-radius: 6px;
-    color: var(--sidebar-text);
-    font-size: 1.15rem;
-    cursor: pointer;
-    transition: background .2s, color .2s;
-  }
-  .sidebar__toggle:hover { background: rgba(255, 255, 255, .16); color: #fff; }
-
-  /* Menú desplegable de navegación */
-  .sidebar__nav {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    display: none;
-    flex-direction: column;
-    gap: 3px;
-    padding: 12px;
-    max-height: calc(100vh - 70px);
-    overflow-y: auto;
-    background: var(--mobile-nav-bg);
-    border-bottom: 1px solid var(--accent-2);
-    box-shadow: 0 16px 30px rgba(0, 0, 0, .45);
-  }
-  .sidebar.nav-open .sidebar__nav { display: flex; }
-
-  .sidebar__link { padding: 11px 13px; }
-  .sidebar__link:hover { transform: none; }
-  .sidebar__link.is-active::before { display: none; }
-
   .main-content { padding: 18px 14px 40px; }
   .page-header h1 { font-size: 1.4rem; }
 
@@ -1938,7 +1837,6 @@ tbody tr:hover { background: var(--row-hover); }
 }
 
 @media (max-width: 400px) {
-  .sidebar { gap: 4px; padding: 5px 8px; }
 
   .avatar { width: 32px; height: 32px; font-size: .72rem; }
 }
@@ -1971,7 +1869,6 @@ svg.lucide {
   pointer-events: none;
 }
 
-.sidebar__toggle svg.lucide { width: 22px; height: 22px; }
 .logout-btn svg.lucide { width: 14px; height: 14px; }
 .stat-card__icon svg.lucide { width: 26px; height: 26px; }
 .status-row__icon svg.lucide { width: 20px; height: 20px; }
@@ -2344,32 +2241,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
 }
 .notif-vacia svg.lucide { width: 26px; height: 26px; margin-bottom: 8px; opacity: .6; }
 
-/* En móvil la campana acompaña al botón hamburguesa */
-@media (max-width: 900px) {
-  .notif-wrap { top: 10px; right: 58px; }
-}
-
-/* En la barra superior móvil (ancho real) la ventana de notificaciones
-   se abre hacia la izquierda y se ajusta para no quedar recortada */
-@media (max-width: 860px) {
-  .notif-panel {
-    left: auto;
-    right: 0;
-    width: min(330px, calc(100vw - 70px));
-  }
-  /* Dentro del menú móvil la ventana deja de flotar y ocupa el ancho completo
-     del desplegable, justo debajo de los datos del usuario. */
-  .sidebar__me .notif-panel {
-    order: 3;
-    flex: 1 0 100%;
-    position: static;
-    left: auto;
-    right: auto;
-    width: auto;
-    max-height: 46vh;
-  }
-}
-
 /* ACCESIBILIDAD */
 /* Skip-nav: enlace para saltar al contenido */
 .skip-nav {
@@ -2575,9 +2446,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   }
   [data-tooltip]:hover::after, [data-tooltip]:focus-visible::after { opacity: 1; }
 }
-@media (max-width: 860px) {
-  .user-profile-card { position: fixed; top: 76px; bottom: auto; left: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 92px); }
-}
 
 /* Cabecera de LabControl y superficies planas con la paleta verde. */
 :root, [data-theme="claro"] {
@@ -2622,11 +2490,103 @@ a { color: var(--color-link); }
 @media (max-width: 860px) {
   .app-brand { padding: 0 16px; }
   .app-brand__icon { width: 28px; height: 28px; }
-  .sidebar { height: 0; min-height: 0; padding: 0; border: 0; gap: 0; box-shadow: none; }
-  .sidebar__toggle { position: fixed; top: 10px; right: 12px; margin: 0; background: var(--color-dark); color: #FFFFFF; }
-  .sidebar__nav { top: 0; }
-  .user-profile-card { top: 68px; max-height: calc(100dvh - 80px); }
 }
+/* En celular las secciones quedan siempre visibles en la barra inferior. */
+.sidebar-user-label { display: none; }
+@media (max-width: 860px) {
+  .app-layout .main-content {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+  .sidebar {
+    position: fixed;
+    inset: auto 0 0;
+    width: 100%;
+    height: calc(64px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0;
+    padding: 0 4px env(safe-area-inset-bottom, 0px);
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 0;
+    border-top: 1px solid var(--color-border);
+    box-shadow: 0 -2px 8px rgba(6, 78, 59, .04);
+  }
+  .sidebar__nav {
+    position: static;
+    display: flex;
+    flex: 1;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+  .sidebar__link {
+    flex: 1;
+    min-width: 0;
+    height: 64px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 2px;
+    color: var(--color-text-muted);
+    font-size: .62rem;
+    line-height: 1.2;
+    border-radius: 0;
+  }
+  .sidebar__link .label { display: block; white-space: nowrap; }
+  .sidebar__link .icon { display: flex; align-items: center; justify-content: center; width: 38px; height: 26px; border-radius: 6px; }
+  .sidebar__link svg.lucide { width: 22px; height: 22px; }
+  .sidebar__link:hover { transform: none; color: var(--color-link); background: transparent; }
+  .sidebar__link.is-active { color: var(--color-link); background: transparent; box-shadow: none; }
+  .sidebar__link.is-active .icon { background: var(--soft-primary); }
+  .sidebar__link.is-active::before { display: none; }
+  .sidebar__user {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    flex: 0 0 calc(100% / var(--nav-items, 5));
+    min-width: 0;
+    height: 64px;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    background: none;
+  }
+  .user-avatar-btn { width: 100%; height: 64px; flex-direction: column; justify-content: center; align-items: center; gap: 4px; color: var(--color-text-muted); }
+  .user-avatar-btn > .avatar { width: 26px; height: 26px; }
+  .sidebar-user-summary { display: none; }
+  .sidebar-user-label { display: block; font-size: .62rem; font-weight: 600; line-height: 1.2; }
+  .user-avatar-btn[aria-expanded="true"] { color: var(--color-link); }
+  .app-brand .notif-wrap { position: static; margin: 0 0 0 auto; padding: 0; border: 0; }
+  .notif-btn { width: 38px; height: 38px; padding: 0; color: var(--color-text); }
+  .notif-btn__badge { top: 0; right: 0; }
+  .notif-panel {
+    position: fixed;
+    top: 64px;
+    bottom: auto;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: min(420px, calc(100dvh - 152px - env(safe-area-inset-bottom, 0px)));
+  }
+  .user-profile-card {
+    position: fixed;
+    top: auto;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    left: auto;
+    right: 12px;
+    width: min(300px, calc(100vw - 24px));
+    max-height: calc(100dvh - 140px - env(safe-area-inset-bottom, 0px));
+  }
+}
+
 @media print {
   .app-brand { display: none; }
   .app-layout { padding-top: 0; }

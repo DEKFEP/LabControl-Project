@@ -17,13 +17,10 @@ const NAV_ITEMS_ALL = [
 ];
 
 let __iconsObserver = null;
-let __sidebarListenersAdded = false;
 
-/* En el celular la barra lateral se convierte en una barra con solo el botón de
-   menú: el bloque de usuario y la campana de notificaciones se muestran dentro
-   del desplegable. El corte es el mismo que usa el CSS (860px). */
+/* El mismo orden de secciones se usa en la sidebar de PC y en la barra
+   inferior del celular. El corte es el mismo que usa CSS (860px). */
 const MQ_MOVIL = window.matchMedia("(max-width: 860px)");
-let __bloqueUsuario = null;
 
 export function actualizarIconosLucide() {
   if (!window.lucide || typeof window.lucide.createIcons !== "function") return;
@@ -56,6 +53,7 @@ function pintarUsuario(sesion) {
     userEl.innerHTML = `
       <button class="user-avatar-btn" type="button" aria-label="Perfil de usuario" aria-controls="user-profile-card" aria-expanded="false" aria-haspopup="dialog" data-tooltip="Mi perfil">
         <span class="avatar avatar--profile"></span>
+        <span class="sidebar-user-label">Perfil</span>
         <span class="sidebar-user-summary"><span class="name"></span><span class="email"></span></span>
       </button>`;
     card = document.createElement("div");
@@ -186,37 +184,23 @@ async function completarCorreoSesion(sesion) {
   } catch {}
 }
 
-// En escritorio la campana sigue a los enlaces y el usuario queda al pie.
-// En móvil ambos siguen dentro de la cabecera del menú desplegable.
+// Campana junto a las secciones en PC y en la cabecera en celular.
+// El perfil permanece al pie de la sidebar o a la derecha de la barra inferior.
 function ubicarBloqueUsuario() {
   const sidebar = document.querySelector(".sidebar");
   const nav = document.getElementById("sidebar-nav");
+  const header = document.querySelector(".app-brand");
   const userEl = document.querySelector(".sidebar__user");
+  const wrap = document.querySelector(".notif-wrap");
   if (!sidebar || !nav || !userEl) return;
-
-  if (!__bloqueUsuario) {
-    __bloqueUsuario = document.createElement("div");
-    __bloqueUsuario.className = "sidebar__me";
-  }
-
-  const wrap = sidebar.querySelector(".notif-wrap");
-
-  if (MQ_MOVIL.matches) {
-    // Arriba del menú desplegable, por delante de los enlaces de navegación.
-    if (__bloqueUsuario.parentElement !== nav) nav.insertBefore(__bloqueUsuario, nav.firstChild);
-    if (userEl.parentElement !== __bloqueUsuario) __bloqueUsuario.appendChild(userEl);
-    if (wrap && wrap.parentElement !== __bloqueUsuario) __bloqueUsuario.appendChild(wrap);
-  } else {
-    if (__bloqueUsuario.parentElement) __bloqueUsuario.remove();
-    if (userEl.parentElement !== sidebar) sidebar.appendChild(userEl);
-    if (wrap) nav.appendChild(wrap);
-  }
+  if (userEl.parentElement !== sidebar) sidebar.appendChild(userEl);
+  const destino = MQ_MOVIL.matches && header ? header : nav;
+  if (wrap && wrap.parentElement !== destino) destino.appendChild(wrap);
 }
 
 MQ_MOVIL.addEventListener("change", () => { cerrarPerfil(); cerrarNotificaciones(); ubicarBloqueUsuario(); });
 
-// Cierra la ventana de notificaciones (al plegar el menú móvil o al pulsar
-// fuera de ella).
+// Cierra la tarjeta de notificaciones al pulsar fuera o cambiar de tamaño.
 function cerrarNotificaciones() {
   const panel = document.querySelector(".notif-panel");
   const btn = document.querySelector(".notif-btn");
@@ -238,6 +222,7 @@ export function renderSidebar(activeHref, requireAuth = true) {
   if (!nav) return;
 
   const items = NAV_ITEMS_ALL.filter((item) => item.roles.includes(rol));
+  document.querySelector(".sidebar")?.style.setProperty("--nav-items", String(items.length + 1));
 
   nav.innerHTML = items.map((item) => `
     <a class="sidebar__link ${item.href === activeHref ? "is-active" : ""}" href="${item.href}" aria-label="${item.label}" data-tooltip="${item.label}" ${item.href === activeHref ? 'aria-current="page"' : ""}>
@@ -253,50 +238,6 @@ export function renderSidebar(activeHref, requireAuth = true) {
     completarCorreoSesion(sesion);
   }
   ubicarBloqueUsuario();
-
-  const sidebar = document.querySelector(".sidebar");
-  if (sidebar && !sidebar.querySelector(".sidebar__toggle")) {
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "sidebar__toggle";
-    toggle.setAttribute("aria-label", "Abrir menú de navegación");
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.innerHTML = '<i data-lucide="menu"></i>';
-
-    const setMenu = (open) => {
-      sidebar.classList.toggle("nav-open", open);
-      toggle.setAttribute("aria-expanded", String(open));
-      toggle.innerHTML = open ? '<i data-lucide="x"></i>' : '<i data-lucide="menu"></i>';
-      if (!open) { cerrarNotificaciones(); cerrarPerfil(); }
-    };
-
-    toggle.addEventListener("click", () =>
-      setMenu(!sidebar.classList.contains("nav-open"))
-    );
-
-    nav.addEventListener("click", (e) => {
-      if (e.target.closest(".sidebar__link")) setMenu(false);
-    });
-
-    if (!__sidebarListenersAdded) {
-      document.addEventListener("click", (e) => {
-        const sb = document.querySelector(".sidebar");
-        if (sb && sb.classList.contains("nav-open") && !sb.contains(e.target)) {
-          sb.classList.remove("nav-open");
-          const t = sb.querySelector(".sidebar__toggle");
-          if (t) {
-            t.setAttribute("aria-expanded", "false");
-            t.innerHTML = '<i data-lucide="menu"></i>';
-          }
-          cerrarNotificaciones();
-          cerrarPerfil();
-        }
-      });
-      __sidebarListenersAdded = true;
-    }
-
-    sidebar.appendChild(toggle);
-  }
 
   inicializarNotificaciones();
 
@@ -333,7 +274,7 @@ function programarSondeo() {
 function inicializarNotificaciones() {
   const sesion = AUTH.getSesion();
   const sidebar = document.querySelector(".sidebar");
-  if (!sesion || !sidebar || sidebar.querySelector(".notif-wrap")) return;
+  if (!sesion || !sidebar || document.querySelector(".notif-wrap")) return;
 
   registrarServiceWorker();
 
