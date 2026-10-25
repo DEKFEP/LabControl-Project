@@ -142,3 +142,49 @@ test("perfil móvil cabe en pantalla y se cierra al plegar el menú", async ({ p
   await page.locator(".sidebar__toggle").click();
   await expect(tarjeta).toBeHidden();
 });
+
+test("paleta verde, cabecera sin logo y superficies verificadas en todas las vistas", async ({ page }, testInfo) => {
+  test.setTimeout(90000);
+  const errores = [];
+  page.on("pageerror", e => errores.push(e.message));
+  await page.goto("/login.html");
+  const acceso = await page.locator(".login-card").boundingBox();
+  expect(Math.abs(acceso.x + acceso.width / 2 - 640)).toBeLessThan(2);
+  await page.screenshot({ path: testInfo.outputPath("4.6-login.png"), fullPage: true, animations: "disabled" });
+  await entrar(page);
+  const vistas = [
+    ["index.html", "#labs-home .lab-card", "inicio"],
+    ["laboratorios.html", "#lab-grid .lab-card", "laboratorios"],
+    ["disponibilidad.html", "#tabla-disponibilidad tr", "disponibilidad"],
+    ["equipos.html", "#tabla-equipos tr", "equipos"],
+    ["reportes.html", ".rep-card", "reportes"],
+    ["configuracion.html", "#panel-perfil", "configuracion"]
+  ];
+  for (const [url, selector, nombre] of vistas) {
+    await page.goto(`/${url}`);
+    await expect(page.locator(selector).first()).toBeVisible();
+    await expect(page.locator('img[src*="logo-insuco"]')).toHaveCount(0);
+    const marca = await page.locator(".app-brand a").boundingBox();
+    expect(marca.x).toBeLessThan(30);
+    expect(marca.y).toBeLessThan(20);
+    const estilo = await page.evaluate(() => {
+      const css = getComputedStyle(document.documentElement);
+      return ["--color-primary", "--color-bg", "--color-surface", "--color-text", "--radius"].map(v => css.getPropertyValue(v).trim().toUpperCase());
+    });
+    expect(estilo).toEqual(["#059669", "#EAF7F0", "#FFFFFF", "#18251F", "6PX"]);
+    await page.screenshot({ path: testInfo.outputPath(`4.6-${nombre}.png`), fullPage: true, animations: "disabled" });
+  }
+  await page.locator(".user-avatar-btn").click();
+  await page.screenshot({ path: testInfo.outputPath("4.6-perfil.png"), animations: "disabled" });
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { localStorage.setItem("lc_tema", "oscuro"); });
+  await page.goto("/index.html");
+  await expect(page.locator("#labs-home .lab-card")).toHaveCount(5);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "oscuro");
+  await page.screenshot({ path: testInfo.outputPath("4.6-oscuro.png"), fullPage: true, animations: "disabled" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".sidebar__toggle").click();
+  await page.locator(".user-avatar-btn").click();
+  await page.screenshot({ path: testInfo.outputPath("4.6-movil.png"), fullPage: true, animations: "disabled" });
+  expect(errores).toEqual([]);
+});

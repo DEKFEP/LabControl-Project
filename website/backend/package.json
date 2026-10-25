@@ -1,6 +1,6 @@
 {
   "name": "labcontrol-backend",
-  "version": "4.5",
+  "version": "4.6",
   "description": "API REST + base de datos SQLite para LabControl Liceo",
   "type": "module",
   "main": "server.js",

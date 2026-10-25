@@ -427,7 +427,7 @@ function inicializarNotificaciones() {
 
 /* Notificaciones del sistema */
 
-const NOTIF_ICONO = "img/logo-insuco.png";
+const NOTIF_ICONO = "img/app-icon.svg";
 
 async function registrarServiceWorker() {
   if (!("serviceWorker" in navigator)) return null;

@@ -3,30 +3,25 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="description" content="Dashboard principal de LabControl: resumen, estado en tiempo real y distribucion de equipos de los laboratorios del Liceo INSUCO." />
+<meta name="description" content="Inicio de LabControl: resumen y acceso a los laboratorios de computación del Liceo INSUCO." />
 <meta property="og:title" content="Inicio · Insuco LabControl" />
-<meta property="og:description" content="Dashboard principal de LabControl: resumen, estado en tiempo real y distribucion de equipos de los laboratorios del Liceo INSUCO." />
+<meta property="og:description" content="Inicio de LabControl: resumen y acceso a los laboratorios de computación del Liceo INSUCO." />
 <meta property="og:type" content="website" />
-<meta property="og:image" content="https://insuco-labcontrol.pages.dev/img/logo-insuco.png" />
 <meta property="og:url" content="https://insuco-labcontrol.pages.dev/index.html" />
 <link rel="canonical" href="https://insuco-labcontrol.pages.dev/index.html" />
-<meta name="theme-color" content="#ffc300" />
+<meta name="theme-color" content="#059669" />
+<link rel="icon" type="image/svg+xml" href="img/app-icon.svg" />
 <link rel="manifest" href="manifest.webmanifest" />
-<link rel="apple-touch-icon" href="img/icon-192.png" />
 <title>Inicio · Insuco LabControl</title>
-<link rel="icon" type="image/png" href="img/logo-insuco.png" />
-<link rel="stylesheet" href="css/style.css?v=4.5" />
-<script src="js/theme.js?v=4.5"></script>
+<link rel="stylesheet" href="css/style.css?v=4.6" />
+<script src="js/theme.js?v=4.6"></script>
 </head>
 <body>
-  <a class="skip-nav" href="#main-content">Saltar al contenido</a>
+<a class="skip-nav" href="#main-content">Saltar al contenido</a>
+<header class="app-brand"><a href="index.html" aria-label="LabControl, inicio">LabControl</a></header>
 <div class="app-layout">
 
   <aside class="sidebar">
-    <div class="sidebar__brand">
-      <img src="img/logo-insuco.png" alt="Insuco LabControl" title="Insuco LabControl">
-      <span class="sidebar__brand-name">LabControl</span>
-    </div>
     <nav class="sidebar__nav" id="sidebar-nav" aria-label="Navegación principal"></nav>
     <div class="sidebar__user">
       <div class="avatar">--</div>
@@ -61,15 +56,15 @@
   <button id="lightbox-lab-prev" style="position:absolute;left:20px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;border-radius:50%;width:48px;height:48px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:24px;z-index:2001">‹</button>
   <button id="lightbox-lab-next" style="position:absolute;right:20px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;border-radius:50%;width:48px;height:48px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:24px;z-index:2001">›</button>
   <div style="display:flex;flex-direction:column;align-items:center;gap:12px;max-width:90vw;max-height:90vh">
-    <img id="lightbox-lab-img" src="" alt="" style="max-width:min(1100px,88vw);max-height:78vh;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6)" />
+    <img id="lightbox-lab-img" src="" alt="" style="max-width:min(1100px,88vw);max-height:78vh;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.6)" />
     <div id="lightbox-lab-counter" style="color:rgba(255,255,255,.85);font-size:0.9rem"></div>
     <div id="lightbox-lab-thumbs" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"></div>
   </div>
 </div>
 
-<script type="module" src="js/data.js?v=4.5"></script>
-<script src="js/vendor/lucide.min.js?v=4.5"></script>
-<script type="module" src="js/app.js?v=4.5"></script>
-<script type="module" src="js/index.js?v=4.5"></script>
+<script type="module" src="js/data.js?v=4.6"></script>
+<script src="js/vendor/lucide.min.js?v=4.6"></script>
+<script type="module" src="js/app.js?v=4.6"></script>
+<script type="module" src="js/index.js?v=4.6"></script>
 </body>
 </html>
