@@ -2493,7 +2493,14 @@ a { color: var(--color-link); }
 }
 /* En celular las secciones quedan siempre visibles en la barra inferior. */
 .sidebar-user-label { display: none; }
+.cfg-mobile-action { display: none; }
 @media (max-width: 860px) {
+  .cfg-acciones { width: 100%; gap: 8px; align-items: stretch; }
+  .cfg-acciones .cfg-mobile-action { display: inline-flex; }
+  .cfg-acciones .btn { flex: 1; min-width: 0; min-height: 44px; justify-content: center; padding: 10px 8px; font-size: .78rem; gap: 6px; }
+  .cfg-profile-footer { border-top: 1px solid var(--color-border); margin-top: 24px; padding-top: 18px; }
+  .cfg-profile-footer.cfg-mobile-action { display: flex; }
+  .cfg-profile-footer .btn { width: 100%; justify-content: center; }
   .app-layout .main-content {
     padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   }
@@ -2563,7 +2570,7 @@ a { color: var(--color-link); }
   .user-avatar-btn > .avatar { width: 26px; height: 26px; }
   .sidebar-user-summary { display: none; }
   .sidebar-user-label { display: block; font-size: .62rem; font-weight: 600; line-height: 1.2; }
-  .user-avatar-btn[aria-expanded="true"] { color: var(--color-link); }
+  .user-avatar-btn[aria-current="page"] { color: var(--color-link); }
   .app-brand .notif-wrap { position: static; margin: 0 0 0 auto; padding: 0; border: 0; }
   .notif-btn { width: 38px; height: 38px; padding: 0; color: var(--color-text); }
   .notif-btn__badge { top: 0; right: 0; }
@@ -2577,13 +2584,7 @@ a { color: var(--color-link); }
     max-height: min(420px, calc(100dvh - 152px - env(safe-area-inset-bottom, 0px)));
   }
   .user-profile-card {
-    position: fixed;
-    top: auto;
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
-    left: auto;
-    right: 12px;
-    width: min(300px, calc(100vw - 24px));
-    max-height: calc(100dvh - 140px - env(safe-area-inset-bottom, 0px));
+    display: none;
   }
 }
 

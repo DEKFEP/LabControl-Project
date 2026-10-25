@@ -1,6 +1,6 @@
 /* service-worker.js — caché offline: red para la API, caché para estáticos. */
 
-const CACHE_NAME = "labcontrol-v4.8";
+const CACHE_NAME = "labcontrol-v4.8.1";
 // Datos de inventario para poder consultarlos sin conexión. Solo se guardan
 // respuestas de lectura que NO son personales (laboratorios, equipos y su
 // inventario), de modo que en un equipo compartido nadie vea datos de la sesión
@@ -21,18 +21,18 @@ const PRECACHE_URLS = [
   "usuarios.html",
   "reportes.html",
   "configuracion.html",
-  "css/style.css?v=4.8",
-  "js/theme.js?v=4.8",
-  "js/app.js?v=4.8",
-  "js/data.js?v=4.8",
-  "js/index.js?v=4.8",
-  "js/login.js?v=4.8",
-  "js/laboratorios.js?v=4.8",
-  "js/equipos.js?v=4.8",
-  "js/disponibilidad.js?v=4.8",
-  "js/reportes.js?v=4.8",
-  "js/usuarios.js?v=4.8",
-  "js/configuracion.js?v=4.8",
+  "css/style.css?v=4.8.1",
+  "js/theme.js?v=4.8.1",
+  "js/app.js?v=4.8.1",
+  "js/data.js?v=4.8.1",
+  "js/index.js?v=4.8.1",
+  "js/login.js?v=4.8.1",
+  "js/laboratorios.js?v=4.8.1",
+  "js/equipos.js?v=4.8.1",
+  "js/disponibilidad.js?v=4.8.1",
+  "js/reportes.js?v=4.8.1",
+  "js/usuarios.js?v=4.8.1",
+  "js/configuracion.js?v=4.8.1",
   "js/app.js",
   "js/data.js",
   "js/index.js",
@@ -43,7 +43,7 @@ const PRECACHE_URLS = [
   "js/reportes.js",
   "js/usuarios.js",
   "js/configuracion.js",
-  "js/vendor/lucide.min.js?v=4.8",
+  "js/vendor/lucide.min.js?v=4.8.1",
   "manifest.webmanifest",
   "img/profile-default.svg",
   "img/labcontrol.png",

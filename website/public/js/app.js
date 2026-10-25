@@ -86,6 +86,10 @@ function pintarUsuario(sesion) {
     });
     const avatarBtn = userEl.querySelector(".user-avatar-btn");
     avatarBtn.addEventListener("click", () => {
+      if (MQ_MOVIL.matches) {
+        window.location.href = "configuracion.html";
+        return;
+      }
       const abrir = card.hidden;
       cerrarNotificaciones();
       card.hidden = !abrir;
@@ -119,7 +123,8 @@ function cerrarPerfil(restaurarFoco = false) {
   const btn = document.querySelector(".user-avatar-btn");
   if (card) card.hidden = true;
   if (btn) {
-    btn.setAttribute("aria-expanded", "false");
+    if (MQ_MOVIL.matches) btn.removeAttribute("aria-expanded");
+    else btn.setAttribute("aria-expanded", "false");
     if (restaurarFoco) btn.focus();
   }
 }
@@ -196,6 +201,19 @@ function ubicarBloqueUsuario() {
   if (userEl.parentElement !== sidebar) sidebar.appendChild(userEl);
   const destino = MQ_MOVIL.matches && header ? header : nav;
   if (wrap && wrap.parentElement !== destino) destino.appendChild(wrap);
+  const boton = userEl.querySelector(".user-avatar-btn");
+  if (boton) {
+    if (MQ_MOVIL.matches) {
+      ["aria-haspopup", "aria-controls", "aria-expanded"].forEach(attr => boton.removeAttribute(attr));
+      if (/\/configuracion(?:\.html)?$/.test(location.pathname)) boton.setAttribute("aria-current", "page");
+      else boton.removeAttribute("aria-current");
+    } else {
+      boton.setAttribute("aria-haspopup", "dialog");
+      boton.setAttribute("aria-controls", "user-profile-card");
+      boton.setAttribute("aria-expanded", "false");
+      boton.removeAttribute("aria-current");
+    }
+  }
 }
 
 MQ_MOVIL.addEventListener("change", () => { cerrarPerfil(); cerrarNotificaciones(); ubicarBloqueUsuario(); });

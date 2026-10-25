@@ -132,19 +132,23 @@ test("foto local del perfil persiste al recargar y cerrar sesión funciona", asy
   await expect(page).toHaveURL(/login\.html/);
 });
 
-test("perfil móvil cabe encima de la barra inferior y se cierra con Escape", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("el perfil conserva la tarjeta en PC y abre Configuración en celular", async ({ page }) => {
   await entrar(page);
   await page.locator(".user-avatar-btn").click();
   const tarjeta = page.locator(".user-profile-card");
   await expect(tarjeta).toBeVisible();
-  const caja = await tarjeta.boundingBox();
-  expect(caja.x).toBeGreaterThanOrEqual(0);
-  expect(caja.x + caja.width).toBeLessThanOrEqual(390);
-  const barra = await page.locator(".sidebar").boundingBox();
-  expect(caja.y + caja.height).toBeLessThanOrEqual(barra.y);
-  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 390, height: 844 });
   await expect(tarjeta).toBeHidden();
+  await expect(page.locator(".user-avatar-btn")).not.toHaveAttribute("aria-haspopup", "dialog");
+  await page.locator(".user-avatar-btn").click();
+  await expect(page).toHaveURL(/configuracion\.html$/);
+  await expect(page.locator("#panel-perfil")).toBeVisible();
+  await expect(page.locator("#btn-ayuda-movil")).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator("#btn-ayuda-movil")).toBeHidden();
+  await expect(page.locator("#btn-cerrar-sesion-perfil")).toBeHidden();
+  await page.locator(".user-avatar-btn").click();
+  await expect(page.locator(".user-profile-card")).toBeVisible();
 });
 
 test("paleta verde, cabecera de LabControl y superficies verificadas en todas las vistas", async ({ page }, testInfo) => {
@@ -189,6 +193,7 @@ test("paleta verde, cabecera de LabControl y superficies verificadas en todas la
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: testInfo.outputPath("4.8-movil.png"), animations: "disabled" });
   await page.locator(".user-avatar-btn").click();
+  await expect(page.locator("#panel-perfil")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("4.8-movil-perfil.png"), animations: "disabled" });
   await page.locator(".notif-btn").click();
   await page.screenshot({ path: testInfo.outputPath("4.8-movil-notificaciones.png"), animations: "disabled" });

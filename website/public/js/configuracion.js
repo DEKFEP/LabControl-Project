@@ -204,6 +204,9 @@ function buildPanel(id) {
             </div>
           `}
         </div>
+        <div class="cfg-profile-footer cfg-mobile-action">
+          <button class="btn btn--danger" id="btn-cerrar-sesion-perfil" type="button"><i data-lucide="log-out"></i> Cerrar sesión</button>
+        </div>
       </div>
     `;
 
@@ -816,13 +819,13 @@ function restablecerConfiguracion() {
     .catch(() => showToast("No se pudo restablecer la configuración.", "error"));
 }
 
-// Ayuda se abre desde la tarjeta de usuario, también en esta misma página.
+// Ayuda se abre desde la tarjeta de PC o desde la cabecera en celular.
 function abrirAyudaDesdePerfil() {
   if (location.hash === "#ayuda") abrirAyuda("faq");
 }
 window.addEventListener("hashchange", abrirAyudaDesdePerfil);
 document.addEventListener("click", e => {
-  if (e.target.closest('a[href="configuracion.html#ayuda"]')) {
+  if (e.target.closest('a[href="configuracion.html#ayuda"], #btn-ayuda-movil')) {
     e.preventDefault();
     history.replaceState(null, "", "#ayuda");
     abrirAyuda("faq");
@@ -1043,7 +1046,7 @@ document.addEventListener("click", (e) => {
 
   if (e.target.closest("#btn-activar-notif")) { activarNotificacionesDesdeConfig(); return; }
   if (e.target.closest("#btn-cambiar-contrasena")) { cambiarContrasena(); return; }
-  if (e.target.closest("#btn-cerrar-sesion")) { AUTH.logout(); return; }
+  if (e.target.closest("#btn-cerrar-sesion, #btn-cerrar-sesion-perfil")) { AUTH.logout(); return; }
   if (e.target.closest("#btn-restablecer-cfg")) {
     if (confirm("¿Restablecer la configuración a valores de fábrica?")) restablecerConfiguracion();
     return;
