@@ -2189,8 +2189,8 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  border: 1px solid rgba(148, 197, 255, .25);
-  background: rgba(148, 197, 255, .08);
+  border: 0;
+  background: transparent;
   color: inherit;
   cursor: pointer;
   display: flex;
@@ -2199,7 +2199,7 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   transition: background .2s, transform .15s;
   pointer-events: auto;
 }
-.notif-btn:hover { background: rgba(148, 197, 255, .2); transform: scale(1.06); }
+.notif-btn:hover { color: var(--accent-2); }
 .notif-btn svg.lucide { width: 19px; height: 19px; }
 
 .notif-btn__badge {
@@ -2486,13 +2486,13 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   }
 }
 
-/* La campana forma parte de la navegación, al pie de la barra lateral. */
+/* La campana sigue a las secciones, separada por una línea discreta. */
 @media (min-width: 861px) {
-  .notif-wrap { position: relative; top: auto; right: auto; margin: 0 12px 12px; }
+  .notif-wrap { position: relative; top: auto; right: auto; margin: 9px 0 0; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .18); }
   .notif-btn { width: 100%; height: 42px; gap: 11px; border-radius: 6px; justify-content: flex-start; padding: 0 13px; font: inherit; font-size: .92rem; font-weight: 600; }
   .notif-btn::after { content: "Notificaciones"; }
   .notif-btn__badge { right: 8px; top: 6px; }
-  .notif-panel { top: auto; bottom: 0; left: calc(100% + 20px); max-height: min(420px, calc(100dvh - 32px)); }
+  .notif-panel { position: fixed; top: 72px; bottom: auto; left: 72px; max-height: min(420px, calc(100dvh - 88px)); }
 }
 
 /* Perfil y navegación compacta en escritorio. En móvil se conservan los nombres. */
@@ -2544,17 +2544,17 @@ textarea.form-input { resize: vertical; min-height: 90px; }
 .ayuda-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .ayuda-tabs [aria-pressed="true"] { background: var(--soft-primary); border-color: var(--color-primary); }
 @media (min-width: 861px) {
-  .sidebar { width: 76px; }
+  .sidebar { width: 60px; }
 
   .sidebar__brand-name, .sidebar-user-summary { display: none; }
-  .sidebar__nav { padding: 14px 12px; overflow: visible; }
+  .sidebar__nav { padding: 14px 10px; overflow: visible; }
   .sidebar__link { justify-content: center; padding: 12px 0; gap: 0; }
   .sidebar__link:hover { transform: none; }
   .sidebar__link .label { display: none; }
   .sidebar__link .icon, .sidebar__link svg.lucide { width: 22px; height: 22px; }
   .sidebar__user { justify-content: center; background: none; border: none; padding: 0; margin: 0 0 18px; }
   .user-avatar-btn { position: relative; }
-  .notif-btn { width: 52px; justify-content: center; padding: 0; }
+  .notif-btn { width: 40px; justify-content: center; padding: 0; }
   .notif-btn::after { content: none; }
   [data-tooltip]::after {
     content: attr(data-tooltip);

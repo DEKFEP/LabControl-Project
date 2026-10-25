@@ -186,9 +186,8 @@ async function completarCorreoSesion(sesion) {
   } catch {}
 }
 
-// Agrupa el bloque de usuario con la campana de notificaciones. En escritorio
-// el contenedor no genera caja (CSS `display: contents`) y todo queda igual
-// que antes: usuario al pie de la barra lateral y campana en su esquina.
+// En escritorio la campana sigue a los enlaces y el usuario queda al pie.
+// En móvil ambos siguen dentro de la cabecera del menú desplegable.
 function ubicarBloqueUsuario() {
   const sidebar = document.querySelector(".sidebar");
   const nav = document.getElementById("sidebar-nav");
@@ -210,7 +209,7 @@ function ubicarBloqueUsuario() {
   } else {
     if (__bloqueUsuario.parentElement) __bloqueUsuario.remove();
     if (userEl.parentElement !== sidebar) sidebar.appendChild(userEl);
-    if (wrap) sidebar.insertBefore(wrap, userEl);
+    if (wrap) nav.appendChild(wrap);
   }
 }
 

@@ -2302,7 +2302,7 @@ app.use((err, req, res, next) => {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const servidor = app.listen(PORT, () => {
-    console.log(`\n  LabControl Liceo v4.6`);
+    console.log(`\n  LabControl Liceo v4.7`);
     if (sitioDentro) {
       console.log(`  API + sitio corriendo en: http://localhost:${PORT}/login.html`);
     } else {
