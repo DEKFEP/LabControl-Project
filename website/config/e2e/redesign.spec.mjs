@@ -35,6 +35,11 @@ test("la campana está dentro de la sidebar y su panel cabe en escritorio", asyn
   await entrar(page);
   const sidebar = await page.locator(".sidebar").boundingBox();
   const boton = await page.locator(".notif-btn").boundingBox();
+  const reportes = await page.getByRole("link", { name: "Reportes", exact: true }).boundingBox();
+  expect(sidebar.width).toBeLessThan(76);
+  expect(boton.y).toBeGreaterThanOrEqual(reportes.y + reportes.height);
+  expect(await page.locator(".notif-wrap").evaluate(el => parseFloat(getComputedStyle(el).borderTopWidth))).toBeGreaterThan(0);
+  expect(await page.locator(".notif-btn").evaluate(el => ({ borde: getComputedStyle(el).borderWidth, fondo: getComputedStyle(el).backgroundColor }))).toEqual({ borde: "0px", fondo: "rgba(0, 0, 0, 0)" });
   expect(boton.x).toBeGreaterThanOrEqual(sidebar.x);
   expect(boton.x + boton.width).toBeLessThanOrEqual(sidebar.x + sidebar.width);
   await page.locator(".notif-btn").click();
