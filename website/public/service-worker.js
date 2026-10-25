@@ -1,6 +1,6 @@
 /* service-worker.js — caché offline: red para la API, caché para estáticos. */
 
-const CACHE_NAME = "labcontrol-v4.8.1";
+const CACHE_NAME = "labcontrol-v4.8.2";
 // Datos de inventario para poder consultarlos sin conexión. Solo se guardan
 // respuestas de lectura que NO son personales (laboratorios, equipos y su
 // inventario), de modo que en un equipo compartido nadie vea datos de la sesión
@@ -21,7 +21,7 @@ const PRECACHE_URLS = [
   "usuarios.html",
   "reportes.html",
   "configuracion.html",
-  "css/style.css?v=4.8.1",
+  "css/style.css?v=4.8.2",
   "js/theme.js?v=4.8.1",
   "js/app.js?v=4.8.1",
   "js/data.js?v=4.8.1",
