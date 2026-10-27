@@ -10,7 +10,7 @@
   "theme_color": "#059669",
   "icons": [
     {
-      "src": "img/labcontrol.png",
+      "src": "img/labcontrol-icon.png",
       "sizes": "1254x1254",
       "type": "image/png",
       "purpose": "any"
