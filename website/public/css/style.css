@@ -2420,13 +2420,16 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   .sidebar__brand-name, .sidebar-user-summary { display: none; }
   .sidebar__nav { padding: 14px 10px; overflow: visible; }
   .sidebar__link { justify-content: center; padding: 12px 0; gap: 0; }
+  .sidebar__link .icon { display: flex; align-items: center; justify-content: center; }
   .sidebar__link:hover { transform: none; }
   .sidebar__link .label { display: none; }
   .sidebar__link .icon, .sidebar__link svg.lucide { width: 22px; height: 22px; }
   .sidebar__user { justify-content: center; background: none; border: none; padding: 0; margin: 0 0 18px; }
   .user-avatar-btn { position: relative; }
-  .notif-btn { width: 44px; height: 46px; margin-inline: -2px; justify-content: center; padding: 0; }
-  .notif-btn svg.lucide { width: 24px; height: 24px; }
+  .notif-btn { width: 100%; height: 46px; margin: 0; justify-content: center; padding: 0; }
+  .notif-btn svg.lucide { width: 22px; height: 22px; }
+  .notif-btn:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+  .notif-btn[aria-expanded="true"] { background: var(--grad-primary); color: var(--primary-contrast); box-shadow: var(--glow); }
   .notif-btn::after { content: none; }
   [data-tooltip]::after {
     content: attr(data-tooltip);
@@ -2469,7 +2472,8 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   z-index: 80;
 }
 .app-brand a { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text); font-family: "Outfit", "Segoe UI", sans-serif; font-size: 1.2rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.2; text-decoration: none; }
-.app-brand__icon { display: block; width: 32px; height: 32px; flex-shrink: 0; object-fit: contain; }
+/* Compensa el margen transparente del archivo original sin deformar el símbolo. */
+.app-brand__icon { display: block; width: 32px; height: 32px; flex-shrink: 0; object-fit: contain; transform: scale(1.7) translate(-1%, -2%); }
 .app-layout { padding-top: 56px; }
 .sidebar { top: 56px; height: calc(100dvh - 56px); border-color: var(--color-border); }
 .main-content { min-width: 0; min-height: calc(100dvh - 56px); background: var(--color-bg); }
