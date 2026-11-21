@@ -141,6 +141,20 @@ jobs:
             --branch master \
             --commit-dirty=true
 
+      # El proyecto antiguo se deja como simple redirección permanente: quien
+      # tenga un enlace con "insuco" acaba automáticamente en la URL nueva.
+      - name: Redirigir la URL histórica
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          export CLOUDFLARE_API_TOKEN="$(printf '%s' "${CLOUDFLARE_API_TOKEN:-}" | tr -d '[:space:]')"
+          export CLOUDFLARE_ACCOUNT_ID="$CUENTA"
+          wrangler pages deploy website/legacy-redirect \
+            --project-name insuco-labcontrol \
+            --branch master \
+            --commit-dirty=true
+
       # Según AGENTS.md, la versión de /api/salud solo cambia cuando cambia el
       # comportamiento de la API. Los cambios de interfaz, de package.json y del
       # mensaje de arranque no necesitan un despliegue de Railway.
@@ -280,6 +294,18 @@ jobs:
               echo "OK   /login.html -> /login (308)"
             else
               echo "::error::/login.html devolvio $codigo (se espera 308 a /login)"
+              fallos=$((fallos + 1))
+            fi
+
+            # El host histórico ya solo redirige al nuevo; ningún enlace antiguo
+            # debe dejar "insuco" en la barra del navegador.
+            vieja="$(curl -o /dev/null -s -w '%{http_code} %{redirect_url}' https://insuco-labcontrol.pages.dev/)"
+            codigo="${vieja%% *}"
+            destino="${vieja#* }"
+            if [ "$codigo" = "301" ] && [[ "$destino" == "https://$HOST"* ]]; then
+              echo "OK   insuco-labcontrol.pages.dev -> $HOST (301)"
+            else
+              echo "::error::la URL antigua devolvio '$vieja' (se espera 301 a https://$HOST)"
               fallos=$((fallos + 1))
             fi
 
