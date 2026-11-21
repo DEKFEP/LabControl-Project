@@ -1289,7 +1289,7 @@ app.get("/api/salud", (req, res) => {
     ? {
         ok: true,
         servicio: "labcontrol-api",
-        version: "4.8",
+        version: "4.9.0",
         cuentasDemoPendientes: cuentasDemoSinRotar().length
       }
     : { ok: true });
@@ -2704,7 +2704,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.exit(1);
   }
   const servidor = app.listen(PORT, () => {
-    console.log(`\n  LabControl Liceo v4.8`);
+    console.log(`\n  LabControl Liceo v4.9.0`);
     if (sitioDentro) {
       console.log(`  API + sitio corriendo en: http://localhost:${PORT}/login`);
     } else {

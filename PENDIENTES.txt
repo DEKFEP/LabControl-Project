@@ -2,8 +2,9 @@ LabControl — PENDIENTES Y LIMITACIONES CONOCIDAS
 ================================================
 
 Documento de trabajo interno. Solo contiene lo que falta por hacer o sigue limitando
-el despliegue actual. Los hallazgos del informe y su prioridad están en
-INFORME-AUDITORIA-4.8.txt (sección 8). La documentación de uso está en README.md.
+el despliegue actual. Versión del proyecto: 4.9.0. Los hallazgos del informe y su
+prioridad están en INFORME-AUDITORIA-4.8.txt (sección 8; nombre histórico de la
+auditoría, realizada sobre 4.8). La documentación de uso está en README.md.
 
 
 1. INTEGRACIONES EXTERNAS PENDIENTES

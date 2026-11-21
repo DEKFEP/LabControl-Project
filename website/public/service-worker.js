@@ -1,6 +1,6 @@
 /* service-worker.js — caché offline: red para la API, caché para estáticos. */
 
-const VERSION = "4.8.6";
+const VERSION = "4.9.0";
 const CACHE_NAME = `labcontrol-v${VERSION}`;
 // Datos de inventario para poder consultarlos sin conexión. Solo se guardan
 // respuestas de lectura que NO son personales (laboratorios, equipos y su
@@ -23,18 +23,18 @@ const PRECACHE_URLS = [
   "usuarios",
   "reportes",
   "configuracion",
-  "css/style.css?v=4.8.6",
-  "js/theme.js?v=4.8.6",
-  "js/app.js?v=4.8.6",
-  "js/data.js?v=4.8.6",
-  "js/index.js?v=4.8.6",
-  "js/login.js?v=4.8.6",
-  "js/laboratorios.js?v=4.8.6",
-  "js/equipos.js?v=4.8.6",
-  "js/disponibilidad.js?v=4.8.6",
-  "js/reportes.js?v=4.8.6",
-  "js/usuarios.js?v=4.8.6",
-  "js/configuracion.js?v=4.8.6",
+  "css/style.css?v=4.9.0",
+  "js/theme.js?v=4.9.0",
+  "js/app.js?v=4.9.0",
+  "js/data.js?v=4.9.0",
+  "js/index.js?v=4.9.0",
+  "js/login.js?v=4.9.0",
+  "js/laboratorios.js?v=4.9.0",
+  "js/equipos.js?v=4.9.0",
+  "js/disponibilidad.js?v=4.9.0",
+  "js/reportes.js?v=4.9.0",
+  "js/usuarios.js?v=4.9.0",
+  "js/configuracion.js?v=4.9.0",
   "js/app.js",
   "js/data.js",
   "js/index.js",
@@ -45,7 +45,7 @@ const PRECACHE_URLS = [
   "js/reportes.js",
   "js/usuarios.js",
   "js/configuracion.js",
-  "js/vendor/lucide.min.js?v=4.8.6",
+  "js/vendor/lucide.min.js?v=4.9.0",
   "manifest.webmanifest",
   "img/profile-default.svg",
   "img/labcontrol-icon.png",
