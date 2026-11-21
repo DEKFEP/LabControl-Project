@@ -13,7 +13,7 @@
     "respaldo": "node scripts/respaldo-externo.mjs"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1163.0",
+    "@aws-sdk/client-s3": "^3.1172.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^5.0.0",
