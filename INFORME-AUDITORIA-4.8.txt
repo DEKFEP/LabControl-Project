@@ -2,15 +2,20 @@
  LABCONTROL 4.8 — INFORME DE AUDITORÍA TÉCNICA
 ================================================================================
  Fecha          : 03/11/2026
- Actualizado    : 06/11/2026 — corregidos C-01, A-01, A-02, M-01, M-02, M-03,
-                  M-04; DUR con backups del volumen como línea base y R2
-                  preparado como copia externa opcional (pendiente).
+ Actualizado    : 20/11/2026 — corregidos C-01, A-01, A-02, M-01 a M-04,
+                  M-05 a M-14 y B-01 a B-12 (sección 8.4); DUR con backups del
+                  volumen como línea base y R2 preparado como copia externa
+                  opcional (pendiente).
+ Versión actual : 4.9.0 (la auditoría se realizó sobre 4.8; este documento
+                  conserva su nombre histórico, pero las referencias de código
+                  de la sección 8.4 ya apuntan a 4.9.0).
  Proyecto       : LabControl — Liceo / Instituto Superior de Comercio
  Ruta analizada : /home/decker/Projects/LabControl/LabControl 4.8
  Alcance        : backend Node/Express + SQLite, PWA frontend, service worker,
                   Pages Function, CI/CD, configuración y dependencias.
  Modo           : auditoría + corrección. Se modificó código para C-01, A-01,
-                  A-02, M-01 a M-04 y DUR; el resto sigue pendiente de decisión.
+                  A-02, M-01 a M-14, B-01 a B-12 y DUR; solo quedan decisiones
+                  de infraestructura (proveedores, backups y rotación).
  Autor          : Auditoría asistida (revisión estática + validación en ejecución)
 
 --------------------------------------------------------------------------------
@@ -1389,8 +1394,8 @@ Definición de niveles usados en este informe:
    B-08  Endpoint `GET /api/me` y `AUTH.sesionVerificada()`. `renderSidebar()`
          es async y reescribe `lc_sesion` con la respuesta del servidor antes
          de decidir menús y botones; ante fallo no se usa el localStorage.
-   B-09  `/api/salud` reporta `version: "4.8"`.
-   B-10  `VERSION = "4.8.6"` en el service worker; `CACHE_NAME` y `API_CACHE` se
+   B-09  `/api/salud` reporta `version: "4.9.0"`.
+   B-10  `VERSION = "4.9.0"` en el service worker; `CACHE_NAME` y `API_CACHE` se
          derivan de esa única constante.
    B-11  Actions fijadas por SHA y CLIs de Wrangler/Railway fijadas a versiones
          exactas en los workflows.
@@ -1471,9 +1476,9 @@ Definición de niveles usados en este informe:
  10. CONCLUSIÓN
 --------------------------------------------------------------------------------
 
- LabControl 4.8 es un proyecto cuidado, con buenas prácticas de seguridad y una
- batería de calidad que pasa completa. No requiere una reescritura ni presenta
- fallos críticos confirmados en el código actual.
+ LabControl 4.9.0 es un proyecto cuidado, con buenas prácticas de seguridad y
+ una batería de calidad que pasa completa. No requiere una reescritura ni
+ presenta fallos críticos confirmados en el código actual.
 
  El trabajo de INTEGRIDAD ya está hecho: los reportes se calculan con datos
  reales y toleran datos antiguos o malformados, el respaldo se entrega como
