@@ -884,7 +884,7 @@ function contenidoFaq() {
 function contenidoTerminos() {
   return `
     <div class="ayuda-texto">
-      <p>Al usar el sistema <strong>Insuco LabControl</strong> aceptas las siguientes condiciones:</p>
+      <p>Al usar el sistema <strong>LabControl</strong> aceptas las siguientes condiciones:</p>
       <h3>1. Uso del sistema</h3>
       <p>La plataforma es de uso exclusivo de los profesores y el personal autorizado del liceo. Las cuentas son personales e intransferibles.</p>
       <h3>2. Reservas y disponibilidad</h3>
@@ -1002,7 +1002,7 @@ function contenidoAcerca() {
             <i data-lucide="globe"></i>
             <div>
               <div class="acerca-contacto__label">Sitio web</div>
-              <div class="acerca-contacto__valor"><a href="https://insuco-labcontrol.pages.dev" target="_blank" rel="noopener noreferrer">insuco-labcontrol.pages.dev</a></div>
+              <div class="acerca-contacto__valor"><a href="https://labcontrol-ym.pages.dev" target="_blank" rel="noopener noreferrer">labcontrol-ym.pages.dev</a></div>
             </div>
           </li>
           <li>
