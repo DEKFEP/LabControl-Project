@@ -3,7 +3,7 @@ import { AUTH, ESTADOS, actualizarEstadoLaboratorio, cargarAgenda, cargarLaborat
 import { abrirModal, cerrarModal, esc, formatFecha, renderSidebar, showToast } from "./app.js";
 
 
-  renderSidebar("disponibilidad.html");
+  await renderSidebar("disponibilidad");
   const sesion = AUTH.getSesion();
   let labSeleccionado = null;
   let labsCache = [];
@@ -23,7 +23,7 @@ import { abrirModal, cerrarModal, esc, formatFecha, renderSidebar, showToast } f
           <td>${esc(lab.responsable)}</td>
           <td style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn--sm" data-lab-id="${esc(lab.id)}">Cambiar estado</button>
-            <a class="btn btn--sm" href="laboratorios.html?id=${esc(lab.id)}">Ver detalles</a>
+            <a class="btn btn--sm" href="laboratorios?id=${esc(lab.id)}">Ver detalles</a>
           </td>
         </tr>
       `;

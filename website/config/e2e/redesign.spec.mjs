@@ -1,11 +1,11 @@
 import { test, expect } from "@playwright/test";
 
 async function entrar(page) {
-  await page.goto("/login.html");
+  await page.goto("/login");
   await page.fill("#input-user", process.env.LC_E2E_ADMIN_USER || "INSUCO");
   await page.fill("#input-pass", process.env.LC_E2E_ADMIN_PASS || "Insuco1336");
   await page.click("#btn-login-enviar");
-  await page.waitForURL("**/index.html");
+  await page.waitForURL("**/index");
 }
 
 test("inicio conserva los laboratorios y abre el listado completo desde Ver más", async ({ page, request }) => {
@@ -14,11 +14,11 @@ test("inicio conserva los laboratorios y abre el listado completo desde Ver más
   await entrar(page);
   await expect(page.locator("#labs-home .lab-card")).toHaveCount(5);
   await expect(page.locator("#status-list, #donut")).toHaveCount(0);
-  await expect(page.locator('#sidebar-nav a[href="laboratorios.html"], #sidebar-nav a[href="mapa.html"], #sidebar-nav a[href="usuarios.html"]')).toHaveCount(0);
+  await expect(page.locator('#sidebar-nav a[href="laboratorios"], #sidebar-nav a[href="mapa"], #sidebar-nav a[href="usuarios"]')).toHaveCount(0);
   await page.getByRole("link", { name: "Ver más" }).click();
-  await expect(page).toHaveURL(/laboratorios\.html/);
+  await expect(page).toHaveURL(/laboratorios(?:\?|$)/);
   await expect(page.locator("#lab-grid .lab-card")).toHaveCount(5);
-  expect((await request.get("/mapa.html")).status()).toBe(404);
+  expect((await request.get("/mapa")).status()).toBe(404);
   expect(errores).toEqual([]);
 });
 
@@ -69,7 +69,7 @@ test("los iconos tienen nombre accesible y tooltip con ratón y teclado", async 
   await enlace.focus();
   expect(await enlace.evaluate(el => getComputedStyle(el, "::after").content)).toBe('"Disponibilidad"');
   expect(await enlace.evaluate(el => getComputedStyle(el, "::after").opacity)).toBe("1");
-  await expect(page.locator('#sidebar-nav a[href="configuracion.html"]')).toHaveCount(0);
+  await expect(page.locator('#sidebar-nav a[href="configuracion"]')).toHaveCount(0);
 });
 
 test("perfil muestra datos y cierra con Escape, fuera y al abrir notificaciones", async ({ page }) => {
@@ -129,7 +129,7 @@ test("foto local del perfil persiste al recargar y cerrar sesión funciona", asy
   await expect(page.locator(".user-avatar-btn img")).toHaveAttribute("src", /^data:image\/jpeg;base64,/);
   await page.locator(".user-avatar-btn").click();
   await page.getByRole("button", { name: "Cerrar Sesión", exact: true }).click();
-  await expect(page).toHaveURL(/login\.html/);
+  await expect(page).toHaveURL(/login(?:\?|$)/);
 });
 
 test("el perfil conserva la tarjeta en PC y abre Configuración en celular", async ({ page }) => {
@@ -141,7 +141,7 @@ test("el perfil conserva la tarjeta en PC y abre Configuración en celular", asy
   await expect(tarjeta).toBeHidden();
   await expect(page.locator(".user-avatar-btn")).not.toHaveAttribute("aria-haspopup", "dialog");
   await page.locator(".user-avatar-btn").click();
-  await expect(page).toHaveURL(/configuracion\.html$/);
+  await expect(page).toHaveURL(/configuracion(?:\?|$)/);
   await expect(page.locator("#panel-perfil")).toBeVisible();
   await expect(page.locator("#btn-ayuda-movil")).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -155,18 +155,18 @@ test("paleta verde, cabecera de LabControl y superficies verificadas en todas la
   test.setTimeout(90000);
   const errores = [];
   page.on("pageerror", e => errores.push(e.message));
-  await page.goto("/login.html");
+  await page.goto("/login");
   const acceso = await page.locator(".login-card").boundingBox();
   expect(Math.abs(acceso.x + acceso.width / 2 - 640)).toBeLessThan(2);
   await page.screenshot({ path: testInfo.outputPath("4.8-login.png"), fullPage: true, animations: "disabled" });
   await entrar(page);
   const vistas = [
-    ["index.html", "#labs-home .lab-card", "inicio"],
-    ["laboratorios.html", "#lab-grid .lab-card", "laboratorios"],
-    ["disponibilidad.html", "#tabla-disponibilidad tr", "disponibilidad"],
-    ["equipos.html", "#tabla-equipos tr", "equipos"],
-    ["reportes.html", ".rep-card", "reportes"],
-    ["configuracion.html", "#panel-perfil", "configuracion"]
+    ["index", "#labs-home .lab-card", "inicio"],
+    ["laboratorios", "#lab-grid .lab-card", "laboratorios"],
+    ["disponibilidad", "#tabla-disponibilidad tr", "disponibilidad"],
+    ["equipos", "#tabla-equipos tr", "equipos"],
+    ["reportes", ".rep-card", "reportes"],
+    ["configuracion", "#panel-perfil", "configuracion"]
   ];
   for (const [url, selector, nombre] of vistas) {
     await page.goto(`/${url}`);
@@ -186,7 +186,7 @@ test("paleta verde, cabecera de LabControl y superficies verificadas en todas la
   await page.screenshot({ path: testInfo.outputPath("4.8-perfil.png"), animations: "disabled" });
   await page.keyboard.press("Escape");
   await page.evaluate(() => { localStorage.setItem("lc_tema", "oscuro"); });
-  await page.goto("/index.html");
+  await page.goto("/index");
   await expect(page.locator("#labs-home .lab-card")).toHaveCount(5);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "oscuro");
   await page.screenshot({ path: testInfo.outputPath("4.8-oscuro.png"), fullPage: true, animations: "disabled" });

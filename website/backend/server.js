@@ -3,7 +3,7 @@
 
 import path from "node:path";
 import fs from "node:fs";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import helmet from "helmet";
@@ -13,13 +13,23 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import QRCode from "qrcode";
 import { body, validationResult } from "express-validator";
-import { db, DB_PATH, DB_DIR, reemplazarBaseDesdeBuffer, alRestaurar, baseDisponible, podarTablas } from "./db.js";
+import { db, DB_DIR, reemplazarBaseDesdeBuffer, alRestaurar, baseDisponible, podarTablas, crearCopiaConsistente, cuentasDemoSinRotar } from "./db.js";
 import { generaSecreto, verificarCodigo } from "./totp.mjs";
+import { iniciarRespaldoProgramado } from "./scripts/respaldo-externo.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// `node:sqlite` solo se importa sin flag a partir de Node 22.13 (M-11).
+{
+  const [mayor, menor] = process.versions.node.split(".").map(Number);
+  if (mayor < 22 || (mayor === 22 && menor < 13)) {
+    console.error("LabControl requiere Node.js >=22.13.0 (usa .nvmrc con Node 24).");
+    process.exit(1);
+  }
+}
 
 // Clave JWT — en producción usar variable de entorno; si no existe se usa una
 // clave persistente guardada en la carpeta de datos, de modo que las sesiones
@@ -47,7 +57,13 @@ const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // contraseñas comunes. La variedad no exige símbolos para no invalidar la
 // cuenta administradora documentada; la longitud sí se sube a 10.
 const MIN_PASSWORD = 10;
-const MAX_PASSWORD = 200;
+// bcryptjs ignora los bytes posteriores al 72: dos contraseñas distintas podían
+// ser equivalentes si compartían los primeros 72 bytes (B-03). Se mide en bytes
+// UTF-8, no en caracteres.
+const MAX_PASSWORD_BYTES = 72;
+// Tope legacy solo para el login: cuentas creadas antes del cambio pueden tener
+// claves más largas y deben seguir entrando si sus primeros 72 bytes coinciden.
+const MAX_PASSWORD_LOGIN = 200;
 // Contraseñas comunes/prohibidas; se comparan en minúsculas.
 const PASSWORDS_PROHIBIDAS = new Set([
   "1234567890", "123456789", "contrasena", "contraseña", "password", "password1",
@@ -59,8 +75,9 @@ const PASSWORDS_PROHIBIDAS = new Set([
 // Devuelve el mensaje de error si la contraseña no cumple la política, o null.
 function errorPassword(pw) {
   if (typeof pw !== "string" || pw.length === 0) return "La contraseña es obligatoria";
-  if (pw.length < MIN_PASSWORD || pw.length > MAX_PASSWORD) {
-    return `La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`;
+  if (pw.length < MIN_PASSWORD) return `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres`;
+  if (Buffer.byteLength(pw, "utf8") > MAX_PASSWORD_BYTES) {
+    return `La contraseña no puede superar ${MAX_PASSWORD_BYTES} bytes`;
   }
   if (!/[a-z]/.test(pw)) return "La contraseña debe incluir al menos una letra minúscula";
   if (!/[A-Z]/.test(pw)) return "La contraseña debe incluir al menos una letra mayúscula";
@@ -72,8 +89,8 @@ function errorPassword(pw) {
 // Encadena la política a express-validator para un campo obligatorio.
 function reglaPassword(campo) {
   return body(campo)
-    .isLength({ min: MIN_PASSWORD, max: MAX_PASSWORD })
-    .withMessage(`La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`)
+    .isLength({ min: MIN_PASSWORD })
+    .withMessage(`La contraseña debe tener al menos ${MIN_PASSWORD} caracteres`)
     .bail()
     .custom((pw) => {
       const e = errorPassword(pw);
@@ -165,17 +182,15 @@ app.use(helmet({
     }
   },
   crossOriginEmbedderPolicy: false,
-  referrerPolicy: { policy: "same-origin" },
-  permissionsPolicy: {
-    permissionsPolicy: {
-      camera: [],
-      microphone: [],
-      geolocation: [],
-      payment: [],
-      usb: []
-    }
-  }
+  referrerPolicy: { policy: "same-origin" }
 }));
+
+// Helmet 7/8 no reconoce `permissionsPolicy` como opción (la ignoraba en
+// silencio): se emite explícitamente, igual que en _headers de Cloudflare (M-10).
+app.use((_req, res, next) => {
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  next();
+});
 
 // Respuestas de la API: no almacenables en caché (datos sensibles de sesión).
 app.use("/api", (req, res, next) => {
@@ -606,13 +621,16 @@ function agFromRow(row) {
 // es lo que infla la respuesta; solo nombre, tipo y tamaño. El detalle
 // (GET /api/reportes/:id) sí trae el `data` completo para ver y descargar.
 function repFromRow(row, conAdjuntos = true) {
-  const adjuntos = JSON.parse(row.adjuntos || "[]");
+  const adjuntos = parsearJSON(row.adjuntos, []);
+  const listaAdjuntos = Array.isArray(adjuntos) ? adjuntos : [];
+  const datos = parsearJSON(row.datos, {});
   return {
     id: row.id, tipo: row.tipo, titulo: row.titulo, descripcion: row.descripcion,
-    fecha: row.fecha, generadoPor: row.generado_por, datos: JSON.parse(row.datos || "{}"),
+    fecha: row.fecha, generadoPor: row.generado_por,
+    datos: datos && typeof datos === "object" ? datos : {},
     adjuntos: conAdjuntos
-      ? adjuntos
-      : adjuntos.map((a) => ({ nombre: a.nombre, tipo: a.tipo, tamano: a.tamano }))
+      ? listaAdjuntos
+      : listaAdjuntos.map((a) => ({ nombre: a.nombre, tipo: a.tipo, tamano: a.tamano }))
   };
 }
 
@@ -761,6 +779,22 @@ alRestaurar(() => {
 // Limpieza periódica de desafíos 2FA vencidos (cada 5 minutos)
 setInterval(limpiarDesafiosVencidos, 5 * 60 * 1000).unref?.();
 
+// SAVEPOINT anidables: `BEGIN` falla si ya hay una transacción abierta. Varias
+// rutas llaman a notificarATodos desde dentro de otras operaciones (B-05).
+function enTransaccion(fn) {
+  const punto = `sp_${randomBytes(8).toString("hex")}`;
+  db.exec(`SAVEPOINT ${punto}`);
+  try {
+    const resultado = fn();
+    db.exec(`RELEASE ${punto}`);
+    return resultado;
+  } catch (err) {
+    db.exec(`ROLLBACK TO ${punto}`);
+    db.exec(`RELEASE ${punto}`);
+    throw err;
+  }
+}
+
 function notificarATodos(opciones) {
   let destinatarios;
   try {
@@ -777,26 +811,25 @@ function notificarATodos(opciones) {
   // Fan-out: un solo cambio alcanza a todos los activos. El lote completo viaja
   // en una transacción (un INSERT y su poda por usuario) en lugar de N llamadas
   // independientes a crearNotificacion, cada una con sus propias lecturas.
-  db.exec("BEGIN");
   try {
-    const insertar = db.prepare(`
-      INSERT INTO notificaciones (usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, usuario_ref, fecha, leida)
-      VALUES (?,?,?,?,?,?,?,?,0)
-    `);
-    const podar = db.prepare(`
-      DELETE FROM notificaciones
-      WHERE usuario_id = ?
-        AND id NOT IN (SELECT id FROM notificaciones WHERE usuario_id = ? ORDER BY id DESC LIMIT 200)
-    `);
-    const mensaje = registro.mensaje.replace(/\{quien\}/g, registro.quien);
-    for (const destinatario of destinatarios) {
-      insertar.run(destinatario, registro.tipo, registro.titulo, mensaje,
-        registro.referencia, registro.solicitudId, registro.usuarioRef, registro.fecha);
-      podar.run(destinatario, destinatario);
-    }
-    db.exec("COMMIT");
+    enTransaccion(() => {
+      const insertar = db.prepare(`
+        INSERT INTO notificaciones (usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, usuario_ref, fecha, leida)
+        VALUES (?,?,?,?,?,?,?,?,0)
+      `);
+      const podar = db.prepare(`
+        DELETE FROM notificaciones
+        WHERE usuario_id = ?
+          AND id NOT IN (SELECT id FROM notificaciones WHERE usuario_id = ? ORDER BY id DESC LIMIT 200)
+      `);
+      const mensaje = registro.mensaje.replace(/\{quien\}/g, registro.quien);
+      for (const destinatario of destinatarios) {
+        insertar.run(destinatario, registro.tipo, registro.titulo, mensaje,
+          registro.referencia, registro.solicitudId, registro.usuarioRef, registro.fecha);
+        podar.run(destinatario, destinatario);
+      }
+    });
   } catch (e) {
-    db.exec("ROLLBACK");
     console.error("No se pudo registrar la notificación:", e.message);
   }
 }
@@ -974,9 +1007,58 @@ function sanitizarTexto(valor, max = 5000) {
   return String(valor).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").slice(0, max);
 }
 
+// Fecha ISO AAAA-MM-DD real: no basta con que la forma coincida, hay que
+// comprobar que el día exista. Antes, 2027-02-31 pasaba el regex y se guardaba.
+function esFechaISOValida(valor) {
+  if (typeof valor !== "string") return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor);
+  if (!m) return false;
+  const anio = Number(m[1]);
+  const mes = Number(m[2]);
+  const dia = Number(m[3]);
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return false;
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  return fecha.getUTCFullYear() === anio
+    && fecha.getUTCMonth() === mes - 1
+    && fecha.getUTCDate() === dia;
+}
+
 // Carga útil en JSON de un reporte: se acota su tamaño para que un reporte no
 // pueda almacenar megabytes en la base (DoS de disco y respuestas lentas).
 const MAX_DATOS_REPORTE = 256 * 1024; // 256 KB serializados
+
+// Claves que nunca deben viajar dentro de los datos de un reporte: si un
+// consumidor futuro mezclara el objeto con otro, contaminarían el prototipo.
+const CLAVES_NO_DATOS = new Set(["__proto__", "constructor", "prototype"]);
+
+// Copia profunda de un valor JSON sin claves peligrosas ni números no finitos.
+// El cuerpo ya viene de JSON.parse, así que no hay funciones ni ciclos.
+function limpiarDatosLibres(valor, profundidad = 0) {
+  if (profundidad > 12) return null;
+  if (valor === null || typeof valor === "string" || typeof valor === "boolean") return valor;
+  if (typeof valor === "number") return Number.isFinite(valor) ? valor : null;
+  if (Array.isArray(valor)) return valor.map((v) => limpiarDatosLibres(v, profundidad + 1));
+  if (typeof valor === "object") {
+    const salida = {};
+    for (const [clave, v] of Object.entries(valor)) {
+      if (CLAVES_NO_DATOS.has(clave)) continue;
+      salida[clave] = limpiarDatosLibres(v, profundidad + 1);
+    }
+    return salida;
+  }
+  return null;
+}
+
+// JSON tolerante a datos corruptos o antiguos: un registro con JSON inválido no
+// debe tumbar el listado ni el detalle del reporte.
+function parsearJSON(texto, porDefecto) {
+  try {
+    const valor = JSON.parse(texto || "");
+    return valor === null || valor === undefined ? porDefecto : valor;
+  } catch {
+    return porDefecto;
+  }
+}
 
 function serializarDatos(datos) {
   if (datos === undefined || datos === null) return "{}";
@@ -985,7 +1067,13 @@ function serializarDatos(datos) {
     e.status = 400;
     throw e;
   }
-  const texto = JSON.stringify(datos);
+  const limpio = limpiarDatosLibres(datos);
+  if (limpio === null || typeof limpio !== "object") {
+    const e = new Error("El contenido del reporte debe ser un objeto o una lista");
+    e.status = 400;
+    throw e;
+  }
+  const texto = JSON.stringify(limpio);
   if (texto.length > MAX_DATOS_REPORTE) {
     const e = new Error(`El contenido del reporte supera el máximo de ${MAX_DATOS_REPORTE / 1024} KB`);
     e.status = 400;
@@ -999,7 +1087,7 @@ function serializarDatos(datos) {
 // altas en el mismo milisegundo) terminaban en un error 500 de clave primaria.
 function nuevoId(prefijo, sugerido, tabla = null) {
   const candidato = typeof sugerido === "string" ? sugerido.trim() : "";
-  if (candidato && /^[A-Za-z0-9_]{1,80}$/.test(candidato) && !idEnUso(tabla, candidato)) return candidato;
+  if (candidato && /^[A-Za-z0-9_]{1,32}$/.test(candidato) && !idEnUso(tabla, candidato)) return candidato;
   let generado = "";
   do {
     generado = `${prefijo}_${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
@@ -1090,19 +1178,36 @@ const temporizadorLimpieza = setInterval(() => {
 }, 15 * 60 * 1000);
 temporizadorLimpieza.unref?.();
 
+// Respaldo externo programado (opcional). Se activa con LC_BACKUP_AUTO=1 y un
+// destino (LC_BACKUP_S3_URI o LC_BACKUP_COPIAR_A). No hace nada en desarrollo.
+iniciarRespaldoProgramado({ logger: console });
+
 app.post("/api/login", loginLimiter, async (req, res) => {
   const { usuario, password } = req.body || {};
-  if (!usuario || !password) return res.status(400).json({ error: "Faltan credenciales" });
 
+  // Los tipos se validan antes de tocar SQLite o bcrypt: un objeto o un número
+  // llegaba hasta el driver y devolvía 500 en vez de un 400 claro.
+  if (typeof usuario !== "string" || typeof password !== "string") {
+    return res.status(400).json({ error: "El usuario y la contraseña deben ser texto" });
+  }
+  const identificador = usuario.trim();
+  if (!identificador || !password) return res.status(400).json({ error: "Faltan credenciales" });
+  if (identificador.length > 254 || password.length > MAX_PASSWORD_LOGIN) {
+    return res.status(400).json({ error: "Credenciales no válidas" });
+  }
+
+  // El correo se compara sin distinguir mayúsculas (ADMIN@LICEO.CL debe entrar),
+  // pero el identificador de usuario se mantiene exacto.
   const row = db.prepare(`
-    SELECT * FROM usuarios WHERE (id = ? OR email = ?) AND activo = 1
-  `).get(usuario, usuario);
+    SELECT * FROM usuarios
+    WHERE (id = ? OR lower(email) = lower(?)) AND activo = 1
+  `).get(identificador, identificador);
 
   // Hash ficticio para prevenir ataques de temporización
   const hashFicticio = "$2a$10$ejPcmjH1Njlwe/IlvwtMK.3Wjjl5KKIo3LwiNO4kwqGB6ffG.3R2C";
   const passwordValido = await bcrypt.compare(password, row ? row.password : hashFicticio);
   if (!row || !passwordValido) {
-    registrarAuditoria(req, "login_fallido", { usuario: String(usuario).slice(0, 60) });
+    registrarAuditoria(req, "login_fallido", { usuario: identificador.slice(0, 60) });
     return res.status(401).json({ error: "Usuario o contraseña incorrectos" });
   }
 
@@ -1126,7 +1231,7 @@ app.post("/api/login", loginLimiter, async (req, res) => {
 // Segundo paso del login con 2FA: valida el código TOTP del desafío pendiente.
 app.post("/api/login/2fa", loginLimiter, (req, res) => {
   const { loginId, codigo } = req.body || {};
-  if (!loginId || !codigo) {
+  if (typeof loginId !== "string" || typeof codigo !== "string" || !loginId || !codigo) {
     return res.status(400).json({ error: "Faltan el identificador de inicio de sesión y el código" });
   }
 
@@ -1178,8 +1283,15 @@ app.post("/api/login/2fa", loginLimiter, (req, res) => {
 // `website/backend`, que es el que manda.
 app.get("/api/salud", (req, res) => {
   const detallado = SALUD_TOKEN && igualSeguro(String(req.headers["x-lc-salud-token"] || ""), SALUD_TOKEN);
+  // El detalle incluye cuántas cuentas demo conservan la contraseña publicada.
+  // Es un número, no la lista: sirve para alertar sin filtrar identificadores.
   res.json(detallado
-    ? { ok: true, servicio: "labcontrol-api", version: "4.3" }
+    ? {
+        ok: true,
+        servicio: "labcontrol-api",
+        version: "4.8",
+        cuentasDemoPendientes: cuentasDemoSinRotar().length
+      }
     : { ok: true });
 });
 
@@ -1307,19 +1419,38 @@ app.get("/api/auditoria", authenticateToken, requireAdmin, (req, res) => {
 
 /* Respaldo de la base de datos (solo administrador) */
 
-// Descargar: se envía el archivo de la base. Con journal DELETE (sin WAL) cada
-// transacción ya quedó volcada al archivo principal, así que es consistente.
+// Descargar: se sirve una instantánea consistente, no el archivo vivo. Leer el
+// .db en marcha podía capturar páginas a medio escribir y producir un respaldo
+// que parecía válido pero fallaba al restaurar. `VACUUM INTO` + integrity_check
+// garantizan que la copia entregada es coherente.
 app.get("/api/backups/exportar", authenticateToken, requireAdmin, (req, res) => {
   const nombre = `labcontrol-backup-${new Date().toISOString().slice(0, 10)}-${Date.now()}.db`;
+  let copia;
+  try {
+    copia = crearCopiaConsistente();
+  } catch (err) {
+    return res.status(err?.status || 500).json({
+      error: err?.message || "No se pudo preparar la copia de seguridad"
+    });
+  }
+
   registrarAuditoria(req, "backup_descargado");
+
+  // res.download fija Content-Disposition, Content-Length y sirve el archivo;
+  // el temporal se borra siempre al terminar (éxito o error).
   res.setHeader("Content-Type", "application/octet-stream");
-  res.setHeader("Content-Disposition", `attachment; filename="${nombre}"`);
-  const stream = fs.createReadStream(DB_PATH);
-  stream.on("error", () => {
-    if (!res.headersSent) res.status(500).json({ error: "No se pudo leer la base de datos" });
-    else res.end();
+  // `dotfiles: "allow"` es necesario porque la instantánea es un archivo oculto
+  // (`.labcontrol-temporal-…`); el nombre que ve el usuario es `nombre`.
+  res.download(copia, nombre, { dotfiles: "allow" }, (err) => {
+    fs.rm(copia, { force: true }, () => {});
+    if (!err) return;
+    console.error("No se pudo enviar la copia de seguridad:", err?.message || err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "No se pudo enviar la copia de seguridad" });
+    } else if (!res.writableEnded) {
+      res.end();
+    }
   });
-  stream.pipe(res);
 });
 
 // Restaurar: se recibe el archivo .db como binario y se reemplaza la base actual.
@@ -1371,6 +1502,19 @@ app.post("/api/refresh", refreshLimiter, (req, res) => {
 
   const fila = db.prepare("SELECT usuario_id, revocado, expira_en FROM refresh_tokens WHERE id = ?").get(decoded.id);
   if (!fila) {
+    // El JWT sigue siendo válido (firmado por nosotros) aunque su fila haya
+    // sido podada o expirada: eso también es reutilización y debe cerrar la
+    // familia de sesiones (B-06).
+    if (decoded.sub) {
+      db.prepare("UPDATE refresh_tokens SET revocado = 1 WHERE usuario_id = ? AND revocado = 0")
+        .run(decoded.sub);
+      const usuarioSospechoso = db.prepare("SELECT id, rol FROM usuarios WHERE id = ?").get(decoded.sub);
+      registrarAuditoria(
+        req, "refresh_reutilizado",
+        { usuario: decoded.sub, motivo: "fila_ausente" },
+        usuarioSospechoso ?? null
+      );
+    }
     limpiarCookiesSesion(req, res);
     return res.status(401).json({ error: "Sesión expirada. Inicia sesión nuevamente." });
   }
@@ -1428,6 +1572,15 @@ app.post("/api/logout", refreshLimiter, (req, res) => {
   res.json({ ok: true });
 });
 
+// Sesión verificada: la cookie HttpOnly decide la identidad real. El cliente
+// usa esta ruta en vez de fiarse del localStorage para decidir menú y botones
+// (B-08); las comprobaciones de la API siguen siendo la última línea.
+app.get("/api/me", authenticateToken, (req, res) => {
+  const fila = db.prepare("SELECT * FROM usuarios WHERE id = ? AND activo = 1").get(req.user.id);
+  if (!fila) return res.status(401).json({ error: "La cuenta no está activa" });
+  res.json({ usuario: usrFromRow(fila) });
+});
+
 // Cambio de contraseña (verifica la contraseña actual)
 app.post("/api/change-password", authenticateToken, sensiblesLimiter, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
@@ -1456,9 +1609,14 @@ app.post("/api/change-password", authenticateToken, sensiblesLimiter, async (req
 
 /* Recuperación de contraseña (base lista; el correo real se envía con Resend) */
 // El enlace de restablecimiento vive 30 minutos en `contrasena_resets`.
-// Sin RESEND_API_KEY el servidor imprime el enlace en la consola (modo base);
-// en producción define RESEND_API_KEY y, opcionalmente, RESEND_FROM.
+// Sin RESEND_API_KEY no se envía ni se imprime el enlace; en producción la
+// variable es obligatoria. RESEND_FROM es opcional.
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+const PRODUCCION = process.env.NODE_ENV === "production";
+
+// El token viaja en claro solo en el correo; en la base se guarda su hash,
+// así un volcado o un backup no expone enlaces vigentes (B-02).
+const hashResetToken = (token) => createHash("sha256").update(String(token)).digest("hex");
 
 function limpiarResetsExpirados() {
   db.prepare("DELETE FROM contrasena_resets WHERE expira_en < ?").run(Date.now());
@@ -1476,8 +1634,10 @@ setInterval(() => {
 async function enviarCorreoReseteo(email, enlace) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    // Base sin proveedor de correo: el enlace se muestra en la consola del server.
-    console.log(`\n  [Recuperar contraseña] ${email}\n  Enlace de prueba: ${enlace}\n`);
+    // Sin proveedor no se entrega ningún correo. Nunca imprimir el enlace: el
+    // token quedaría en los logs con acceso de lectura amplio (M-07). El
+    // desarrollador puede consultarlo solo en la base, ya hasheado.
+    console.log("  [Recuperar contraseña] solicitud recibida; sin RESEND_API_KEY no se envía correo.");
     return;
   }
   const from = process.env.RESEND_FROM || "LabControl <onboarding@resend.dev>";
@@ -1516,6 +1676,11 @@ function urlBasePublico() {
 
 // Solicitar recuperación: siempre responde lo mismo (no revela si la cuenta existe).
 app.post("/api/recuperar-contrasena", (req, res) => {
+  // En producción sin proveedor de correo la recuperación no puede funcionar:
+  // se responde 503 antes de mirar la base para no revelar si el correo existe.
+  if (PRODUCCION && !process.env.RESEND_API_KEY) {
+    return res.status(503).json({ error: "La recuperación de contraseña no está disponible en este momento." });
+  }
   const email = String(req.body?.email ?? "").trim().toLowerCase();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: "Ingresa un correo válido" });
@@ -1527,9 +1692,9 @@ app.post("/api/recuperar-contrasena", (req, res) => {
     db.prepare("DELETE FROM contrasena_resets WHERE usuario_id = ?").run(usuario.id);
     const token = randomBytes(32).toString("hex");
     db.prepare("INSERT INTO contrasena_resets (token, usuario_id, expira_en, usado) VALUES (?,?,?,0)")
-      .run(token, usuario.id, Date.now() + RESET_TOKEN_TTL_MS);
+      .run(hashResetToken(token), usuario.id, Date.now() + RESET_TOKEN_TTL_MS);
     registrarAuditoria(req, "recuperacion_solicitada", { usuario: usuario.id });
-    const enlace = `${urlBasePublico()}/login.html?reset=${token}`;
+    const enlace = `${urlBasePublico()}/login?reset=${token}`;
     enviarCorreoReseteo(usuario.email, enlace)
       .catch((e) => console.error("No se pudo enviar el correo de restablecimiento:", e?.message || e));
   }
@@ -1546,7 +1711,8 @@ app.post("/api/recuperar-contrasena/:token", [
   }
 
   limpiarResetsExpirados();
-  const fila = db.prepare("SELECT * FROM contrasena_resets WHERE token = ? AND usado = 0").get(req.params.token);
+  const tokenHash = hashResetToken(req.params.token);
+  const fila = db.prepare("SELECT * FROM contrasena_resets WHERE token = ? AND usado = 0").get(tokenHash);
   if (!fila) return res.status(400).json({ error: "El enlace de restablecimiento es inválido o expiró" });
 
   const usuario = db.prepare("SELECT id FROM usuarios WHERE id = ? AND activo = 1").get(fila.usuario_id);
@@ -1554,8 +1720,8 @@ app.post("/api/recuperar-contrasena/:token", [
 
   const hashed = await bcrypt.hash(req.body.newPassword, 10);
   db.prepare("UPDATE usuarios SET password = ? WHERE id = ?").run(hashed, fila.usuario_id);
-  db.prepare("UPDATE contrasena_resets SET usado = 1 WHERE token = ?").run(req.params.token);
-  db.prepare("DELETE FROM contrasena_resets WHERE usuario_id = ? AND token != ?").run(fila.usuario_id, req.params.token);
+  db.prepare("UPDATE contrasena_resets SET usado = 1 WHERE token = ?").run(tokenHash);
+  db.prepare("DELETE FROM contrasena_resets WHERE usuario_id = ? AND token != ?").run(fila.usuario_id, tokenHash);
   db.prepare("UPDATE refresh_tokens SET revocado = 1 WHERE usuario_id = ?").run(fila.usuario_id);
   registrarAuditoria(req, "password_restablecida", { usuario: fila.usuario_id });
   res.json({ ok: true, message: "Contraseña actualizada. Inicia sesión con tu nueva contraseña." });
@@ -1563,7 +1729,7 @@ app.post("/api/recuperar-contrasena/:token", [
 
 /* Registro de cuenta propia (público, sin sesión) */
 app.post("/api/registro", registroLimiter, [
-  body("id").trim().matches(/^[a-zA-Z0-9_]+$/).withMessage("El usuario solo puede contener letras, números y guion bajo"),
+  body("id").trim().matches(/^[a-zA-Z0-9_]{1,32}$/).withMessage("El usuario debe tener entre 1 y 32 caracteres: letras, números y guion bajo"),
   body("nombre").trim().notEmpty().withMessage("El nombre es obligatorio"),
   body("apellido").trim().notEmpty().withMessage("El apellido es obligatorio"),
   body("email").isEmail().withMessage("El correo debe ser válido"),
@@ -1713,7 +1879,7 @@ app.get("/api/usuarios/:id", authenticateToken, (req, res) => {
 });
 
 app.post("/api/usuarios", authenticateToken, requireAdmin, [
-  body("id").trim().matches(/^[a-zA-Z0-9_]+$/).withMessage("El ID solo puede contener letras, números y guion bajo"),
+  body("id").trim().matches(/^[a-zA-Z0-9_]{1,32}$/).withMessage("El ID debe tener entre 1 y 32 caracteres: letras, números y guion bajo"),
   body("nombre").trim().notEmpty().withMessage("El nombre es obligatorio"),
   body("apellido").trim().notEmpty().withMessage("El apellido es obligatorio"),
   body("email").isEmail().withMessage("El email debe ser válido"),
@@ -1765,7 +1931,7 @@ app.patch("/api/usuarios/:id", authenticateToken, [
   body("nombre").optional().trim().notEmpty(),
   body("apellido").optional().trim().notEmpty(),
   body("email").optional().isEmail().withMessage("El email debe ser válido"),
-  body("password").optional().isLength({ min: MIN_PASSWORD, max: MAX_PASSWORD }).withMessage(`La contraseña debe tener entre ${MIN_PASSWORD} y ${MAX_PASSWORD} caracteres`).bail()
+  body("password").optional().isLength({ min: MIN_PASSWORD }).withMessage(`La contraseña debe tener al menos ${MIN_PASSWORD} caracteres`).bail()
     .custom((pw) => { const e = errorPassword(pw); if (e) throw new Error(e); return true; }),
   body("rol").optional().isIn(["admin", "programacion", "otro_area"]).withMessage("Rol inválido"),
   body("nivelAcceso").optional().isIn(["total", "tecnico", "basico"]).withMessage("Nivel de acceso inválido")
@@ -1867,16 +2033,11 @@ app.delete("/api/usuarios/:id", authenticateToken, requireAdmin, (req, res) => {
     if (n <= 1) return res.status(400).json({ error: "No puedes eliminar al único administrador" });
   }
 
-  db.exec("BEGIN");
-  try {
+  enTransaccion(() => {
     db.prepare("UPDATE reportes SET generado_por = NULL WHERE generado_por = ?").run(req.params.id);
     db.prepare("UPDATE solicitudes_especialidad SET resuelta_por = NULL WHERE resuelta_por = ?").run(req.params.id);
     db.prepare("DELETE FROM usuarios WHERE id = ?").run(req.params.id);
-    db.exec("COMMIT");
-  } catch (e) {
-    db.exec("ROLLBACK");
-    throw e;
-  }
+  });
 
   registrarAuditoria(req, "usuario_eliminado", { usuario: actual.id, rol: actual.rol });
   res.status(204).end();
@@ -1891,7 +2052,7 @@ app.get("/api/agenda", authenticateToken, (req, res) => {
 
 app.post("/api/agenda", authenticateToken, [
   body("labId").trim().notEmpty().withMessage("El laboratorio es obligatorio"),
-  body("fecha").matches(/^\d{4}-\d{2}-\d{2}$/).withMessage("La fecha debe tener formato AAAA-MM-DD"),
+  body("fecha").custom(esFechaISOValida).withMessage("La fecha debe ser una fecha real en formato AAAA-MM-DD"),
   body("motivo").trim().notEmpty().withMessage("El motivo es obligatorio"),
   body("horaInicio").optional({ values: "falsy" }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage("La hora de inicio debe tener formato HH:MM"),
   body("horaFin").optional({ values: "falsy" }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage("La hora de fin debe tener formato HH:MM")
@@ -1973,6 +2134,150 @@ app.delete("/api/agenda/:id", authenticateToken, (req, res) => {
 
 /* Reportes */
 
+// Tipos cuyo contenido se calcula en el servidor a partir de las tablas reales.
+// El cliente ya no envía datos: si los manda, se ignoran para estos tipos.
+const TIPOS_REPORTE_CALCULADOS = new Set(["uso", "disponibilidad", "fallas", "inventario"]);
+
+// Rango [inicio, fin) del mes al que pertenece la fecha del reporte. Si la
+// fecha no se puede interpretar, se usa el mes en curso.
+function rangoMes(fechaIso) {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(fechaIso || ""));
+  const hoy = new Date();
+  const anio = m ? Number(m[1]) : hoy.getFullYear();
+  const mes = m ? Number(m[2]) : hoy.getMonth() + 1;
+  if (!Number.isInteger(anio) || !Number.isInteger(mes) || mes < 1 || mes > 12) {
+    const inicio = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-01`;
+    const siguiente = new Date(Date.UTC(hoy.getFullYear(), hoy.getMonth() + 1, 1));
+    return { inicio, fin: siguiente.toISOString().slice(0, 10) };
+  }
+  const inicio = `${anio}-${String(mes).padStart(2, "0")}-01`;
+  const siguiente = new Date(Date.UTC(anio, mes, 1));
+  return { inicio, fin: siguiente.toISOString().slice(0, 10) };
+}
+
+// Duración en horas de una reserva. Devuelve 0 si las horas no son válidas o
+// el fin no es posterior al inicio.
+function horasEntre(horaInicio, horaFin) {
+  const a = /^(\d{1,2}):(\d{2})$/.exec(String(horaInicio || ""));
+  const b = /^(\d{1,2}):(\d{2})$/.exec(String(horaFin || ""));
+  if (!a || !b) return 0;
+  const minutos = (Number(b[1]) * 60 + Number(b[2])) - (Number(a[1]) * 60 + Number(a[2]));
+  return minutos > 0 ? minutos / 60 : 0;
+}
+
+// Calcula el contenido de un reporte con datos reales:
+//   uso             → horas reservadas por laboratorio en el mes indicado
+//   disponibilidad  → % de equipos activos por laboratorio
+//   fallas          → equipos actualmente en falla
+//   inventario      → conteo de equipos por estado
+function calcularDatosReporte(tipo, fecha) {
+  if (tipo === "uso") {
+    const { inicio, fin } = rangoMes(fecha);
+    const filas = db.prepare(`
+      SELECT l.nombre AS lab, a.hora_inicio, a.hora_fin
+      FROM laboratorios l
+      LEFT JOIN agenda a ON a.lab_id = l.id AND a.fecha >= ? AND a.fecha < ?
+      ORDER BY l.id
+    `).all(inicio, fin);
+
+    const horas = new Map();
+    for (const fila of filas) {
+      if (!horas.has(fila.lab)) horas.set(fila.lab, 0);
+      if (fila.hora_inicio === null) continue;
+      horas.set(fila.lab, horas.get(fila.lab) + horasEntre(fila.hora_inicio, fila.hora_fin));
+    }
+    const labels = [...horas.keys()];
+    return {
+      labels,
+      valores: labels.map((lab) => Math.round(horas.get(lab) * 10) / 10)
+    };
+  }
+
+  if (tipo === "disponibilidad") {
+    const filas = db.prepare(`
+      SELECT l.nombre AS lab, l.estado,
+             COUNT(e.id) AS total,
+             COALESCE(SUM(CASE WHEN e.estado = 'activo' THEN 1 ELSE 0 END), 0) AS activos
+      FROM laboratorios l
+      LEFT JOIN equipos e ON e.lab_id = l.id
+      GROUP BY l.id
+      ORDER BY l.id
+    `).all();
+
+    return {
+      labels: filas.map((fila) => fila.lab),
+      valores: filas.map((fila) => {
+        const total = Number(fila.total || 0);
+        if (total > 0) return Math.round((Number(fila.activos || 0) / total) * 100);
+        // Base antigua sin filas de equipos: usar el estado del laboratorio.
+        return fila.estado === "disponible" ? 100 : 0;
+      })
+    };
+  }
+
+  if (tipo === "fallas") {
+    const filas = db.prepare(`
+      SELECT e.id, e.nombre AS equipo, e.estado, e.observaciones, l.nombre AS lab
+      FROM equipos e
+      JOIN laboratorios l ON l.id = e.lab_id
+      WHERE e.estado = 'falla'
+      ORDER BY l.id, e.id
+    `).all();
+
+    return {
+      fallas: filas.map((fila) => ({
+        equipo: fila.equipo || fila.id,
+        lab: fila.lab,
+        descripcion: fila.observaciones || "Falla reportada",
+        estado: "pendiente"
+      }))
+    };
+  }
+
+  if (tipo === "inventario") {
+    const fila = db.prepare(`
+      SELECT COUNT(*) AS total,
+             COALESCE(SUM(CASE WHEN estado = 'activo' THEN 1 ELSE 0 END), 0) AS activos,
+             COALESCE(SUM(CASE WHEN estado = 'falla' THEN 1 ELSE 0 END), 0) AS enFalla,
+             COALESCE(SUM(CASE WHEN estado = 'mantencion' THEN 1 ELSE 0 END), 0) AS enMantencion
+      FROM equipos
+    `).get();
+
+    const total = Number(fila.total || 0);
+    if (total > 0) {
+      return {
+        total,
+        activos: Number(fila.activos || 0),
+        enFalla: Number(fila.enFalla || 0),
+        enMantencion: Number(fila.enMantencion || 0)
+      };
+    }
+
+    // Bases antiguas sin inventario individual: usar la ficha del laboratorio.
+    const labs = db.prepare("SELECT equipos, estado FROM laboratorios").all();
+    const totalLabs = labs.reduce((n, lab) => n + Number(lab.equipos || 0), 0);
+    const enMantencion = labs
+      .filter((lab) => lab.estado === "mantencion")
+      .reduce((n, lab) => n + Number(lab.equipos || 0), 0);
+    return {
+      total: totalLabs,
+      activos: Math.max(0, totalLabs - enMantencion),
+      enFalla: 0,
+      enMantencion
+    };
+  }
+
+  return {};
+}
+
+// Contenido final de un reporte: los tipos conocidos se calculan siempre en el
+// backend; los demás conservan el contenido libre que envíe el cliente.
+function datosDeReporte(tipo, fecha, datosCliente) {
+  return TIPOS_REPORTE_CALCULADOS.has(tipo)
+    ? calcularDatosReporte(tipo, fecha)
+    : datosCliente;
+}
+
 app.get("/api/reportes", authenticateToken, (req, res) => {
   // Solo los roles técnicos (admin/programación) ven el listado completo; el
   // resto únicamente sus propios reportes, igual que en el resto de listados.
@@ -1999,7 +2304,7 @@ app.post("/api/reportes", authenticateToken, [
   body("tipo").trim().isLength({ min: 1, max: 50 }).withMessage("El tipo debe tener entre 1 y 50 caracteres"),
   body("titulo").trim().notEmpty().withMessage("El título es obligatorio"),
   body("descripcion").trim().notEmpty().withMessage("La descripción es obligatoria"),
-  body("fecha").optional({ values: "falsy" }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage("La fecha debe tener formato AAAA-MM-DD")
+  body("fecha").optional({ values: "falsy" }).custom(esFechaISOValida).withMessage("La fecha debe ser una fecha real en formato AAAA-MM-DD")
 ], (req, res) => {
   // Crear reportes es una tarea técnica: se exige el mismo perfil que ve la
   // sección completa (admin o programación).
@@ -2012,15 +2317,18 @@ app.post("/api/reportes", authenticateToken, [
   }
 
   const r = req.body;
+  const tipoFinal = sanitizarTexto(r.tipo, 50);
   const id = nuevoId("rep", r.id, "reportes");
   const hoy = new Date();
   const fechaPorDefecto = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
+  const fechaFinal = r.fecha || fechaPorDefecto;
   db.prepare(`
     INSERT INTO reportes (id, tipo, titulo, descripcion, fecha, generado_por, datos, adjuntos)
     VALUES (?,?,?,?,?,?,?,?)
-  `).run(id, sanitizarTexto(r.tipo, 50), sanitizarTexto(r.titulo, 300), sanitizarTexto(r.descripcion, 5000),
-         r.fecha || fechaPorDefecto, req.user.id,
-         serializarDatos(r.datos), JSON.stringify(sanitizarAdjuntos(r.adjuntos)));
+  `).run(id, tipoFinal, sanitizarTexto(r.titulo, 300), sanitizarTexto(r.descripcion, 5000),
+         fechaFinal, req.user.id,
+         serializarDatos(datosDeReporte(tipoFinal, fechaFinal, r.datos)),
+         JSON.stringify(sanitizarAdjuntos(r.adjuntos)));
 
   const rep = repFromRow(db.prepare("SELECT * FROM reportes WHERE id = ?").get(id));
   notificarCambioReporte("creado", rep, req.user.id);
@@ -2031,7 +2339,7 @@ app.patch("/api/reportes/:id", authenticateToken, [
   body("titulo").optional().trim().notEmpty(),
   body("descripcion").optional().trim().notEmpty(),
   body("tipo").optional().trim().isLength({ min: 1, max: 50 }),
-  body("fecha").optional().matches(/^\d{4}-\d{2}-\d{2}$/).withMessage("La fecha debe tener el formato AAAA-MM-DD")
+  body("fecha").optional().custom(esFechaISOValida).withMessage("La fecha debe ser una fecha real en formato AAAA-MM-DD")
 ], (req, res) => {
   const actual = db.prepare("SELECT * FROM reportes WHERE id = ?").get(req.params.id);
   if (!actual) return res.status(404).json({ error: "Reporte no encontrado" });
@@ -2052,6 +2360,15 @@ app.patch("/api/reportes/:id", authenticateToken, [
     return res.status(400).json({ error: "El título y la descripción son obligatorios" });
   }
 
+  const tipoFinal = r.tipo !== undefined ? sanitizarTexto(r.tipo, 50) : actual.tipo;
+  const fechaFinal = r.fecha ?? actual.fecha;
+  // Para los tipos calculados se regenera el contenido desde las tablas; así un
+  // cliente no puede inyectar cifras inventadas al editar (ni conservar las
+  // antiguas generadas con Math.random()).
+  const datosFinales = TIPOS_REPORTE_CALCULADOS.has(tipoFinal)
+    ? calcularDatosReporte(tipoFinal, fechaFinal)
+    : (r.datos !== undefined ? r.datos : parsearJSON(actual.datos, {}));
+
   db.prepare(`
     UPDATE reportes SET
       tipo        = ?,
@@ -2062,12 +2379,12 @@ app.patch("/api/reportes/:id", authenticateToken, [
       adjuntos    = ?
     WHERE id = ?
   `).run(
-    r.tipo !== undefined ? sanitizarTexto(r.tipo, 50) : actual.tipo,
+    tipoFinal,
     r.titulo !== undefined ? sanitizarTexto(r.titulo, 300) : actual.titulo,
     r.descripcion !== undefined ? sanitizarTexto(r.descripcion, 5000) : actual.descripcion,
-    r.fecha ?? actual.fecha,
-    serializarDatos(r.datos ?? JSON.parse(actual.datos || "{}")),
-    JSON.stringify(r.adjuntos !== undefined ? sanitizarAdjuntos(r.adjuntos) : JSON.parse(actual.adjuntos || "[]")),
+    fechaFinal,
+    serializarDatos(datosFinales),
+    JSON.stringify(r.adjuntos !== undefined ? sanitizarAdjuntos(r.adjuntos) : parsearJSON(actual.adjuntos, [])),
     req.params.id
   );
 
@@ -2240,31 +2557,92 @@ app.get("/api/config", authenticateToken, (req, res) => {
   res.json(configParaUsuario(JSON.parse(row.data), req.user?.rol));
 });
 
+// Esquema de configuración: solo se admiten las secciones y claves conocidas,
+// con sus tipos y rangos. Antes un PATCH arbitrario podía guardar, por ejemplo,
+// `anticipacionMaxReserva: -1` y bloquear todas las reservas futuras (M-08).
+const CONFIG_ESQUEMA = {
+  sitio: {
+    nombreInstitucion: (v) => typeof v === "string" && v.trim().length >= 1 && v.length <= 120,
+    nombreSistema: (v) => typeof v === "string" && v.trim().length >= 1 && v.length <= 60,
+    logo: (v) => typeof v === "string" && v.length <= 2000,
+    tema: (v) => typeof v === "string" && v.length <= 40,
+    idioma: (v) => v === "es" || v === "en"
+  },
+  red: {
+    subredLabs: (v) => typeof v === "string" && v.length <= 100,
+    servidorDNS: (v) => typeof v === "string" && v.length <= 100,
+    puertaEnlace: (v) => typeof v === "string" && v.length <= 100,
+    wifiHabilitado: (v) => typeof v === "boolean"
+  },
+  notificaciones: {
+    emailAdmin: (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) && v.length <= 254,
+    alertaFallas: (v) => typeof v === "boolean",
+    alertaDisponibilidad: (v) => typeof v === "boolean",
+    alertaReservas: (v) => typeof v === "boolean",
+    alertaReportes: (v) => typeof v === "boolean",
+    alertaSolicitudes: (v) => typeof v === "boolean",
+    alertaNuevosUsuarios: (v) => typeof v === "boolean",
+    recordatorioReserva: (v) => typeof v === "boolean"
+  },
+  seguridad: {
+    sesionTimeout: (v) => Number.isInteger(v) && v >= 5 && v <= 120,
+    intentosLoginMax: (v) => Number.isInteger(v) && v >= 3 && v <= 10,
+    registroActividad: (v) => typeof v === "boolean"
+  },
+  laboratorios: {
+    horaApertura: (v) => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v),
+    horaCierre: (v) => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v),
+    permitirReservaExterna: (v) => typeof v === "boolean",
+    anticipacionMaxReserva: (v) => Number.isInteger(v) && v >= 1 && v <= 30
+  },
+  equipos: {
+    habilitarControlRemoto: (v) => typeof v === "boolean",
+    apagadoAutomatico: (v) => typeof v === "boolean",
+    monitoreoTiempoReal: (v) => typeof v === "boolean",
+    intervaloEncendido: (v) => Number.isInteger(v) && v >= 5 && v <= 300
+  }
+};
+
+function validarCambiosConfig(cuerpo) {
+  const errores = [];
+  for (const [seccion, valor] of Object.entries(cuerpo)) {
+    if (CLAVES_NO_DATOS.has(seccion)) continue;
+    const esquema = CONFIG_ESQUEMA[seccion];
+    if (!esquema || valor === null || typeof valor !== "object" || Array.isArray(valor)) {
+      errores.push(`Sección inválida: ${seccion}`);
+      continue;
+    }
+    for (const [clave, v] of Object.entries(valor)) {
+      if (CLAVES_NO_DATOS.has(clave)) continue;
+      if (!esquema[clave] || !esquema[clave](v)) errores.push(`${seccion}.${clave} no es válido`);
+    }
+  }
+  return errores;
+}
+
 app.patch("/api/config", authenticateToken, requireAdmin, (req, res) => {
   const row = db.prepare("SELECT data FROM config WHERE id = 1").get();
   if (!row) return res.status(404).json({ error: "Configuración no encontrada" });
   const actual = JSON.parse(row.data);
   const nuevo = { ...actual };
 
-  // Validación de estructura: el cuerpo debe ser un objeto plano
   if (typeof req.body !== "object" || req.body === null || Array.isArray(req.body)) {
     return res.status(400).json({ error: "El cuerpo de la solicitud debe ser un objeto JSON" });
   }
+  const errores = validarCambiosConfig(req.body);
+  if (errores.length) {
+    return res.status(400).json({ error: "Configuración inválida", details: errores });
+  }
 
-  // Merge de un nivel: se ignoran claves peligrosas (protección contra
-  // prototype pollution vía JSON con `__proto__`, `constructor`, etc.).
-  for (const [key, valor] of Object.entries(req.body)) {
-    if (["__proto__", "constructor", "prototype"].includes(key)) continue;
-    // Validar que el valor sea un tipo primitivo u objeto plano
-    if (valor !== null && typeof valor === "object" && !Array.isArray(valor)) {
-      // Verificar que no sea un objeto con claves peligrosas
-      if (Object.keys(valor).some(k => ["__proto__", "constructor", "prototype"].includes(k))) {
-        continue;
-      }
+  // Merge de un nivel sobre las claves ya validadas.
+  for (const [seccion, valor] of Object.entries(req.body)) {
+    if (CLAVES_NO_DATOS.has(seccion)) continue;
+    const permitidas = CONFIG_ESQUEMA[seccion];
+    const limpio = {};
+    for (const [clave, v] of Object.entries(valor)) {
+      if (permitidas[clave] && !CLAVES_NO_DATOS.has(clave)) limpio[clave] = v;
     }
-    nuevo[key] = (typeof valor === "object" && valor !== null && actual[key])
-      ? { ...actual[key], ...valor }
-      : valor;
+    nuevo[seccion] = { ...(actual[seccion] || {}), ...limpio };
   }
 
   db.prepare("UPDATE config SET data = ? WHERE id = 1").run(JSON.stringify(nuevo));
@@ -2283,9 +2661,29 @@ app.patch("/api/config", authenticateToken, requireAdmin, (req, res) => {
 const dirSitio = path.resolve(process.env.LC_PUBLIC_DIR || path.join(__dirname, "..", "public"));
 const sitioDentro = fs.existsSync(path.join(dirSitio, "index.html"));
 
+// Igual que _redirects en Cloudflare: una URL histórica con .html redirige a la
+// limpia para que la extensión no aparezca en la barra del navegador. Se aplica
+// antes de express.static, que por defecto serviría el archivo con un 200.
+const PAGINAS_HTML = new Set([
+  "index", "login", "laboratorios", "disponibilidad",
+  "equipos", "reportes", "usuarios", "configuracion"
+]);
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const coincidencia = /^\/([\w-]+)\.html$/.exec(req.path);
+  if (!coincidencia || !PAGINAS_HTML.has(coincidencia[1])) return next();
+  const pagina = coincidencia[1];
+  const limpia = pagina === "index" ? "/" : `/${pagina}`;
+  const query = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  return res.redirect(308, `${limpia}${query}`);
+});
+
 app.use(express.static(dirSitio, {
   dotfiles: "deny",
-  index: ["index.html"]
+  index: ["index.html"],
+  // URLs públicas limpias: /login sirve login.html. Las rutas /api/* ya están
+  // registradas antes, así que no se ven afectadas.
+  extensions: ["html"]
 }));
 
 /* Manejo de errores */
@@ -2301,10 +2699,14 @@ app.use((err, req, res, next) => {
 /* Arranque: solo si este archivo es el punto de entrada (node server.js) */
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (PRODUCCION && !(process.env.LC_PUBLIC_URL || "").trim()) {
+    console.error("LC_PUBLIC_URL es obligatoria en producción: los enlaces de recuperación y las cookies Secure dependen de ella.");
+    process.exit(1);
+  }
   const servidor = app.listen(PORT, () => {
     console.log(`\n  LabControl Liceo v4.8`);
     if (sitioDentro) {
-      console.log(`  API + sitio corriendo en: http://localhost:${PORT}/login.html`);
+      console.log(`  API + sitio corriendo en: http://localhost:${PORT}/login`);
     } else {
       console.log(`  API corriendo en: http://localhost:${PORT}/api`);
       console.log(`  El sitio no está en ${dirSitio}: esta instancia solo responde la API.`);

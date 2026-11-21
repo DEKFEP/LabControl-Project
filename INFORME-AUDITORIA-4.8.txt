@@ -1,0 +1,1498 @@
+================================================================================
+ LABCONTROL 4.8 — INFORME DE AUDITORÍA TÉCNICA
+================================================================================
+ Fecha          : 03/11/2026
+ Actualizado    : 06/11/2026 — corregidos C-01, A-01, A-02, M-01, M-02, M-03,
+                  M-04; DUR con backups del volumen como línea base y R2
+                  preparado como copia externa opcional (pendiente).
+ Proyecto       : LabControl — Liceo / Instituto Superior de Comercio
+ Ruta analizada : /home/decker/Projects/LabControl/LabControl 4.8
+ Alcance        : backend Node/Express + SQLite, PWA frontend, service worker,
+                  Pages Function, CI/CD, configuración y dependencias.
+ Modo           : auditoría + corrección. Se modificó código para C-01, A-01,
+                  A-02, M-01 a M-04 y DUR; el resto sigue pendiente de decisión.
+ Autor          : Auditoría asistida (revisión estática + validación en ejecución)
+
+--------------------------------------------------------------------------------
+ 0. RESUMEN EJECUTIVO
+--------------------------------------------------------------------------------
+
+El proyecto presenta una base de seguridad sólida y muy por encima de la media
+para un sistema escolar. No se encontraron vulnerabilidades críticas explotables
+de forma remota en el código actual: no hay RCE, ni bypass de autenticación, ni
+inyección SQL evidente. El único hallazgo crítico es condicional: la credencial
+demo histórica podría seguir activa en una base migrada y debe comprobarse en
+la instancia real (C-01). Fuera de eso, los problemas importantes son de
+INTEGRIDAD DE DATOS y CONFIABILIDAD, no de compromiso directo.
+
+Los tres riesgos de integridad y confiabilidad que más deberían preocupar son:
+
+  1. Los reportes de uso, disponibilidad, fallas e inventario se crean con DATOS
+     INVENTADOS (números aleatorios y una falla ficticia) y se presentan como
+     reales. Un directivo puede tomar decisiones con cifras falsas.
+  2. La exportación de respaldo lee el archivo SQLite en vivo y puede producir
+     una copia inconsistente o corrupta si coincide con una escritura.
+  3. Hay errores funcionales visibles: el login con correo en mayúsculas falla,
+     ciertos tipos de dato devuelven 500, se aceptan fechas imposibles como
+     2027-02-31 y un reporte malformado rompe la vista del cliente.
+
+ESTADO: los riesgos 1 y 2, el crítico condicional (credencial demo), los
+errores funcionales M-01 a M-04 y todos los hallazgos M-05 a M-14 y B-01 a
+B-12 ya están corregidos en el código (ver 8.1 a 8.4). Para durabilidad se
+adopta como línea base los backups automáticos del
+volumen de Railway (ver 6.4.1), que se activan en el panel. La copia fuera del
+proveedor en R2 está implementada y documentada, pero queda pendiente por
+decisión del establecimiento (ver 6.4.2 y PENDIENTES.txt).
+
+Conteo de hallazgos:
+
+  +-----------+-------+
+  | Severidad | Total |
+  +-----------+-------+
+  | Crítico   |   1*  |   (* condicional: credencial demo no rotada)
+  | Alto      |   2   |
+  | Medio     |  14   |
+  | Bajo      |  12   |
+  +-----------+-------+
+  | TOTAL     |  29   |
+  +-----------+-------+
+
+  * El hallazgo crítico es condicional: solo aplica si en producción sigue
+    activa la contraseña demo publicada hasta la versión 4.1. En el código
+    actual la semilla demo está desactivada por defecto, por lo que no es un
+    crítico confirmado.
+
+Validación ejecutada:
+
+  +----------------------------------+--------------------------------------+
+  | Comprobación                     | Resultado                            |
+  +----------------------------------+--------------------------------------+
+  | npm test (Jest + Supertest)      | 127/127 pruebas, 7 suites      OK   |
+  | npm run lint (ESLint)            | Sin errores                     OK   |
+  | npm run typecheck (TypeScript)   | Sin errores                     OK   |
+  | npm run check (sintaxis)         | 16/16 archivos                  OK   |
+  | npm audit backend                | 0 vulnerabilidades              OK   |
+  | npm audit config                 | 20 avisos (17 mod., 3 bajos)    AVISO|
+  +----------------------------------+--------------------------------------+
+
+  Los 20 avisos de website/config pertenecen a la cadena de herramientas
+  (Jest y sus dependencias: deepmerge, glob, minimatch, qs, test-exclude), no
+  al runtime. El CI solo falla con --audit-level=high, por lo que no bloquean
+  la rama.
+
+--------------------------------------------------------------------------------
+ 1. METODOLOGÍA
+--------------------------------------------------------------------------------
+
+  1. Lectura completa de README.md, PENDIENTES.txt, server.js, db.js, totp.mjs,
+     módulos del frontend, service worker, Pages Function y workflows.
+  2. Ejecución de la batería de calidad del proyecto (tests, lint, typecheck,
+     comprobación de sintaxis y auditoría de dependencias).
+  3. Levantamiento del servidor en el puerto 3123 con una base temporal
+     (LC_DB_DIR=/tmp/opencode/lc-audit, LC_SEED_DEMO=1) y pruebas HTTP reales
+     de login, reservas, reportes, configuración y respaldos.
+  4. Verificación de supuestos contra la documentación oficial de Node.js
+     (node:sqlite) y de Helmet 7/8.
+  5. Clasificación por severidad según probabilidad e impacto.
+
+Definición de niveles usados en este informe:
+
+  CRÍTICO : Compromiso total, pérdida masiva de datos o acceso no autenticado
+            inmediato. Requiere corrección urgente (horas).
+  ALTO    : Pérdida de datos, corrupción de información o decisión institucional
+            basada en datos falsos. Corrección en días.
+  MEDIO   : Fallo funcional relevante, degradación de seguridad o exposición
+            limitada. Corrección en semanas.
+  BAJO    : Robustez, higiene, mantenibilidad o riesgo aceptado. Planificar.
+
+--------------------------------------------------------------------------------
+ 2. HALLAZGOS CRÍTICOS
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+ C-01 · CRÍTICO CONDICIONAL · Credencial de demostración histórica
+--------------------------------------------------------------------------------
+ Ubicación : PENDIENTES.txt; website/backend/db.js:813-816
+ Tipo      : Credencial conocida / acceso no autorizado
+ Estado    : CORREGIDO (04/11/2026). Ver 8.1.
+
+ Descripción:
+   Hasta la versión 4.1 se publicó la cuenta INSUCO / Insuco1336. El código
+   actual guarda las contraseñas demo como hash bcrypt y la semilla demo está
+   desactivada por defecto (LC_SEED_DEMO), lo cual es correcto. Sin embargo,
+   cualquier base de datos creada antes de 4.1 y migrada hasta 4.8 conserva
+   ese hash.
+
+ Impacto:
+   Si esa credencial sigue activa en producción, cualquiera que conozca el dato
+   histórico entra como administrador: control total de usuarios, respaldos,
+   configuración y datos personales. Sería un compromiso total del sistema.
+
+ Verificación (ejecutar contra la instancia real, nunca contra la base local):
+
+   curl -s -o /dev/null -w "%{http_code}\n" \
+     -H "Content-Type: application/json" \
+     -d '{"usuario":"INSUCO","password":"Insuco1336"}' \
+     https://<host-real>/api/login
+
+   Si devuelve 200, el hallazgo es crítico y confirmado.
+
+ Recomendación:
+   1. Probar la credencial en producción.
+   2. Si funciona, cambiarla de inmediato y revocar todos los refresh tokens
+      del usuario:
+        UPDATE refresh_tokens SET revocado = 1 WHERE usuario_id = 'INSUCO';
+   3. Revisar la auditoría (tabla auditoria / GET /api/auditoria) por accesos
+      con esa cuenta desde fechas anteriores.
+   4. Activar 2FA obligatorio para todas las cuentas admin.
+   5. Añadir una comprobación al arranque que detecte hashes de contraseñas
+      demo conocidas y avise (o bloquee) si están activos.
+
+--------------------------------------------------------------------------------
+ 3. HALLAZGOS ALTOS
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+ A-01 · ALTO · Reportes con datos simulados presentados como reales
+--------------------------------------------------------------------------------
+ Ubicación : website/public/js/reportes.js:400
+             website/public/js/reportes.js:430-442
+             README.md:35
+ Tipo      : Integridad de información / riesgo institucional
+ Estado    : CORREGIDO (04/11/2026). Ver 8.1.
+
+ Descripción:
+   Al crear un reporte de tipo "uso", "disponibilidad", "fallas" o
+   "inventario", el cliente genera los datos con generarDatosMock():
+
+     labels: ["Lab 1","Lab 2","Lab 3","Lab 4","Lab 5"],
+     valores: [70,65,50,15,85].map(v => v + Math.floor(Math.random()*15))
+     ...
+     return { fallas: [{ equipo:"PC-nuevo", lab:"Lab 1",
+              descripcion:"Falla simulada", estado:"pendiente" }] };
+     return { total:138, activos:134, enFalla:3, enMantencion:1 };
+
+   Es decir: horas de uso y porcentajes de disponibilidad aleatorios, una falla
+   ficticia y un inventario fijo. El README solo advierte que el control remoto
+   está simulado, pero presenta los reportes como datos reales del sistema.
+
+ Impacto:
+   Las cifras quedan persistidas en la base y se exportan a CSV e impresión sin
+   ninguna marca de "demostración". Se pueden usar para decisiones de compra,
+   mantención o rendición de cuentas. Es el hallazgo de mayor riesgo práctico.
+
+ Recomendación:
+   Opción A (preferida): calcular los datos en el backend a partir de las tablas
+   reales (agenda, equipos, reportes) al crear el reporte.
+   Opción B (mínima): si aún no hay cálculo real, guardar
+   datos: { demo: true } y mostrar un aviso visible en pantalla, CSV e impresión,
+   y bloquear la exportación como si fuera oficial.
+
+ Implementación sugerida (backend):
+
+   // POST /api/reportes
+   const datos = r.tipo === "otro" ? {} : calcularDatosReporte(r.tipo);
+   // calcularDatosReporte consulta agenda/equipos y devuelve estructuras
+   // validadas; nunca Math.random().
+
+   Y en el cliente, eliminar generarDatosMock() y enviar solo { tipo, titulo,
+   descripcion, fecha }.
+
+--------------------------------------------------------------------------------
+ A-02 · ALTO · Exportación de respaldo potencialmente inconsistente
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:1310-1323
+             website/backend/db.js:60-65
+ Tipo      : Pérdida de datos / corrupción de respaldo
+ Estado    : CORREGIDO (04/11/2026). Ver 8.1.
+
+ Descripción:
+   El endpoint /api/backups/exportar transmite el archivo SQLite en vivo:
+
+     const stream = fs.createReadStream(DB_PATH);
+     stream.pipe(res);
+
+   El comentario afirma que con journal_mode=DELETE la copia es consistente
+   porque "cada transacción ya quedó volcada al archivo principal". Eso es
+   incorrecto: en modo DELETE SQLite modifica el archivo principal en el mismo
+   lugar durante la transacción; el journal permite revertir, pero no ofrece
+   una instantánea legible concurrente.
+
+ Impacto:
+   Si la descarga coincide con una escritura (reserva, reporte, notificación,
+   auditoría), el .db descargado puede contener páginas a medio escribir. El
+   respaldo se ve válido (cabecera SQLite correcta) pero falla al restaurar o
+   pierde filas. Es un fallo silencioso: se descubre cuando se necesita.
+
+ Recomendación:
+   Generar una instantánea consistente y servir esa copia temporal.
+
+ Implementación sugerida (Node >= 22.16, sqlite.backup):
+
+     import { backup } from "node:sqlite";
+     const tmp = path.join(DB_DIR, `backup-${Date.now()}.db`);
+     await backup(db, tmp);
+     res.download(tmp, nombre, () => fs.unlink(tmp, () => {}));
+
+   Implementación compatible con Node 22.13+ (VACUUM INTO):
+
+     const tmp = path.join(DB_DIR, `backup-${Date.now()}.db`);
+     db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+     res.download(tmp, nombre, () => fs.unlink(tmp, () => {}));
+
+   Añadir además:
+     - PRAGMA integrity_check sobre la copia antes de enviarla.
+     - Borrado garantizado del temporal (try/finally).
+     - Cabecera Content-Length y nombre de archivo sin datos del sistema.
+
+--------------------------------------------------------------------------------
+ 4. HALLAZGOS MEDIOS
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+ M-01 · MEDIO · El login con correo en mayúsculas falla
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:1097-1099
+ Tipo      : Error funcional / usabilidad
+ Estado    : CORREGIDO (04/11/2026). Ver 8.2.
+
+ Descripción:
+   SELECT * FROM usuarios WHERE (id = ? OR email = ?) AND activo = 1
+
+   Los correos se guardan en minúsculas (server.js:1586 y 1817), pero la
+   búsqueda es sensible a mayúsculas. Verificado en ejecución:
+     admin@liceo.cl  -> 200
+     ADMIN@LICEO.CL  -> 401
+
+ Impacto:
+   Usuarios legítimos no pueden entrar y reciben "Usuario o contraseña
+   incorrectos", lo que genera tickets de soporte y desconfianza.
+
+ Recomendación:
+   Normalizar el identificador y comparar sin distinguir mayúsculas.
+
+ Implementación sugerida:
+
+   const identificador = String(usuario).trim();
+   const row = db.prepare(`
+     SELECT * FROM usuarios
+     WHERE (id = ? COLLATE NOCASE OR lower(email) = lower(?)) AND activo = 1
+   `).get(identificador, identificador);
+
+   Añadir un índice funcional si la tabla crece:
+     CREATE INDEX IF NOT EXISTS idx_usuarios_email_lower
+       ON usuarios(lower(email));
+
+--------------------------------------------------------------------------------
+ M-02 · MEDIO · Tipos no-string en el login devuelven 500
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:1093-1099
+ Tipo      : Error funcional / robustez
+ Estado    : CORREGIDO (04/11/2026). Ver 8.2.
+
+ Descripción:
+   /api/login no usa express-validator; solo comprueba que usuario y password
+   sean "truthy". Un objeto como usuario llega a node:sqlite, que no puede
+   enlazarlo y lanza una excepción no controlada.
+
+   Verificado:
+     curl -d '{"usuario":{"a":1},"password":"x"}' /api/login
+     -> {"error":"Error interno del servidor"}  500
+
+ Impacto:
+   Errores 500 evitables, ruido en logs y una vía trivial para generar alertas.
+
+ Recomendación:
+
+   app.post("/api/login", loginLimiter, [
+     body("usuario").isString().trim().notEmpty().withMessage("Usuario requerido"),
+     body("password").isString().notEmpty().withMessage("Contraseña requerida")
+   ], async (req, res) => {
+     const errores = validationResult(req);
+     if (!errores.isEmpty()) {
+       return res.status(400).json({ error: errores.array()[0].msg });
+     }
+     // ...
+   });
+
+--------------------------------------------------------------------------------
+ M-03 · MEDIO · Fechas imposibles aceptadas y persistidas
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:1894   (agenda)
+             website/backend/server.js:2002   (crear reporte)
+             website/backend/server.js:2034   (editar reporte)
+ Tipo      : Validación de datos
+ Estado    : CORREGIDO (04/11/2026). Ver 8.2.
+
+ Descripción:
+   La validación es solo la regex ^\d{4}-\d{2}-\d{2}$. Verificado:
+     POST /api/agenda   {"fecha":"2027-02-31"} -> 201
+     POST /api/reportes {"fecha":"2027-02-31"} -> 201
+
+   Además, new Date("2027-02-31T00:00:00Z") se interpreta como el 3 de marzo,
+   así que el cálculo de anticipación (server.js:1919-1922) usa una fecha
+   distinta de la que se guarda.
+
+ Impacto:
+   Agenda con fechas inexistentes, ordenamientos erróneos y validaciones de
+   anticipación que no coinciden con la fecha mostrada.
+
+ Recomendación:
+
+   function fechaISOValida(valor) {
+     if (typeof valor !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
+     const [a, m, d] = valor.split("-").map(Number);
+     const f = new Date(Date.UTC(a, m - 1, d));
+     return f.getUTCFullYear() === a && f.getUTCMonth() === m - 1 && f.getUTCDate() === d;
+   }
+
+   Usarla en agenda y reportes, y normalizar la fecha antes de guardar.
+
+--------------------------------------------------------------------------------
+ M-04 · MEDIO · El contenido "datos" de un reporte no se valida y rompe la vista
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:981-995
+             website/public/js/reportes.js:445-478
+ Tipo      : Validación / error de cliente
+ Estado    : CORREGIDO (04/11/2026). Ver 8.3.
+
+ Descripción:
+   serializarDatos() solo comprueba que sea objeto y que no supere 256 KB.
+   Verificado:
+     POST /api/reportes {"tipo":"uso","datos":{"labels":null}} -> 201
+
+   Luego buildReporteHTML() ejecuta rep.datos.labels.map(...) y
+   rep.datos.fallas.map(...) sin comprobar existencia. El detalle del reporte
+   lanza un TypeError y la vista queda vacía (y el CSV puede fallar igual).
+
+ Impacto:
+   Un reporte con datos incompletos inutiliza la pantalla; cualquiera con permiso
+   de creación puede dejar registros "envenenados" para los administradores.
+
+ Recomendación:
+   Validar la forma por tipo en el backend y blindar el render con valores por
+   defecto.
+
+   function validarDatosReporte(tipo, datos) {
+     const d = datos && typeof datos === "object" ? datos : {};
+     if (tipo === "uso" || tipo === "disponibilidad") {
+       const labels = Array.isArray(d.labels) ? d.labels.filter(x => typeof x === "string") : [];
+       const valores = Array.isArray(d.valores) ? d.valores.filter(Number.isFinite) : [];
+       if (labels.length !== valores.length) {
+         const e = new Error("Datos del reporte inconsistentes"); e.status = 400; throw e;
+       }
+       return { labels, valores };
+     }
+     if (tipo === "fallas") {
+       return { fallas: Array.isArray(d.fallas) ? d.fallas.slice(0, 500) : [] };
+     }
+     // inventario / otro
+     return d;
+   }
+
+   En el cliente:
+     const labels = Array.isArray(rep.datos?.labels) ? rep.datos.labels : [];
+     const valores = Array.isArray(rep.datos?.valores) ? rep.datos.valores : [];
+     const fallas = Array.isArray(rep.datos?.fallas) ? rep.datos.fallas : [];
+
+--------------------------------------------------------------------------------
+ M-05 · MEDIO · Modo demo silencioso y con contraseña arbitraria
+--------------------------------------------------------------------------------
+ Ubicación : website/public/js/data.js:642-702
+             website/public/js/data.js:478-495
+ Tipo      : Seguridad / confianza
+
+ Descripción:
+   pedir() activa el modo demo ante un TypeError de red o un 404/405 sin JSON.
+   En demo, AUTH.login acepta cualquier contraseña no vacía para las cuentas de
+   ejemplo y expone una interfaz con rol administrador y datos institucionales
+   ficticios.
+
+ Impacto:
+   - Si API_BASE está mal configurado, la app "funciona" mostrando datos falsos
+     en lugar de fallar de forma visible.
+   - Un usuario puede creer que tiene permisos de administrador.
+   - En un equipo compartido, el modo demo puede quedar activo sin aviso.
+
+ Recomendación:
+   Activar demo solo con un flag explícito (build de desarrollo o ?demo=1),
+   mostrar un banner permanente, exigir credenciales demo válidas y nunca
+   activarlo automáticamente ante un error de red.
+
+--------------------------------------------------------------------------------
+ M-06 · MEDIO · La pestaña "Actividad" del usuario es inventada
+--------------------------------------------------------------------------------
+ Ubicación : website/public/js/usuarios.js:212-256
+ Tipo      : Integridad de información
+
+ Descripción:
+   mockActividad() devuelve siempre eventos con fechas fijas de agosto de 2026
+   ("Inicio de sesión exitoso", "Agendó reserva...", "Ejecutó control remoto").
+   Se muestran en la ficha del usuario sin ninguna advertencia y sin leer la
+   tabla de auditoría.
+
+ Impacto:
+   Se atribuyen acciones falsas a personas concretas; puede afectar evaluaciones
+   o investigaciones internas.
+
+ Recomendación:
+   Consumir /api/auditoria filtrada por usuario (con control de permisos) o
+   eliminar la pestaña hasta implementarla. Si se mantiene el mock, marcarlo
+   como "datos de ejemplo" en la propia interfaz.
+
+--------------------------------------------------------------------------------
+ M-07 · MEDIO · La recuperación de contraseña no funciona sin Resend y filtra
+             el token en los logs
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:1476-1479
+             website/backend/server.js:1504-1511
+             website/backend/server.js:1518-1538
+             website/backend/.env.example:38-40
+ Tipo      : Seguridad / funcionalidad
+
+ Descripción:
+   Sin RESEND_API_KEY el enlace de restablecimiento se imprime en la consola del
+   servidor:
+     [Recuperar contraseña] correo@dominio
+     Enlace de prueba: https://.../login.html?reset=<token>
+
+   Además, urlBasePublico() cae por defecto en http://localhost:PORT, por lo que
+   el enlace enviado por correo apuntaría a localhost si falta LC_PUBLIC_URL.
+
+ Impacto:
+   - En producción con logs agregados, el token queda expuesto a quien pueda
+     leerlos (30 minutos de validez, suficiente para tomar la cuenta).
+   - Sin proveedor de correo, los usuarios no pueden recuperar la contraseña.
+
+ Recomendación:
+   En producción, si no hay proveedor, responder 503 genérico y registrar solo
+   "solicitud recibida" (sin token). Exigir LC_PUBLIC_URL al arrancar y no
+   imprimir nunca enlaces con token.
+
+--------------------------------------------------------------------------------
+ M-08 · MEDIO · PATCH /api/config no valida el esquema
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:2243-2273
+ Tipo      : Integridad de configuración
+
+ Descripción:
+   Solo se comprueba que el cuerpo sea un objeto plano y se evita prototype
+   pollution. Cualquier clave y tipo se guarda. Verificado: se puede fijar
+   laboratorios.anticipacionMaxReserva a un valor negativo, cadena o número
+   enorme.
+
+   Con anticipacionMaxReserva = -1, la comprobación
+     const anticipMax = Number(cfg.laboratorios?.anticipacionMaxReserva) || 7;
+   devuelve -1 y TODA reserva futura es rechazada (server.js:1918-1923).
+
+ Impacto:
+   Un error del panel o una cuenta admin comprometida deja el sistema
+   inutilizable para todos los usuarios.
+
+ Recomendación:
+   Validar cada sección con un esquema (Zod, Joi o validadores manuales).
+   Ejemplo con Zod:
+
+     const configSchema = z.object({
+       sitio: z.object({
+         nombreInstitucion: z.string().max(120).optional(),
+         nombreSistema: z.string().max(60).optional(),
+         tema: z.enum(["claro", "oscuro"]).optional()
+       }).partial().optional(),
+       laboratorios: z.object({
+         anticipacionMaxReserva: z.number().int().min(1).max(365).optional()
+       }).partial().optional(),
+       notificaciones: z.record(z.boolean()).optional()
+     }).strict();
+
+   Si no se quiere añadir dependencia, validar manualmente rangos y tipos antes
+   del merge y responder 400 con el detalle.
+
+--------------------------------------------------------------------------------
+ M-09 · MEDIO · El service worker cachea inventario filtrado por rol por URL
+--------------------------------------------------------------------------------
+ Ubicación : website/public/service-worker.js:9-13 y 116-135
+             website/public/js/data.js:990-1003
+ Tipo      : Exposición de datos entre sesiones
+
+ Descripción:
+   /api/laboratorios y /api/equipos devuelven campos distintos según esTecnico()
+   (server.js:570-584: IP, MAC, serie, hardware). El service worker guarda la
+   respuesta bajo la URL, sin usuario ni rol.
+
+   Escenario en equipo compartido:
+     1. Un técnico consulta equipos -> caché con IP/MAC/serie.
+     2. La sesión caduca o se cierra el navegador (sin logout explícito).
+     3. Otro usuario básico entra sin conexión -> recibe la copia del técnico.
+
+ Impacto:
+   Exposición de inventario técnico a un rol que no debería verlo. La caché solo
+   se borra en el logout explícito.
+
+ Recomendación:
+   - Borrar API_CACHE al iniciar sesión y al detectar expiración de sesión.
+   - Incluir usuario/rol en la clave de caché, o
+   - No cachear respuestas autenticadas: cachear solo una vista pública sin
+     campos técnicos (o dejar el offline solo para HTML/CSS/JS).
+
+ Implementación sugerida (cliente, al login exitoso):
+
+   navigator.serviceWorker?.controller?.postMessage({ type: "limpiar-cache-api" });
+
+   Y en el service worker, además del mensaje, limpiar al recibir un 401:
+
+   if (response.status === 401) caches.delete(API_CACHE);
+
+--------------------------------------------------------------------------------
+ M-10 · MEDIO · La cabecera Permissions-Policy configurada no se emite
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:169-177
+ Tipo      : Configuración de seguridad inefectiva
+
+ Descripción:
+   Se pasa a Helmet una opción permissionsPolicy con un objeto anidado. Helmet
+   7/8 no admite esa opción (verificado en los typings de helmet@7.1.0 y
+   8.1.0), por lo que se ignora en silencio y la cabecera nunca se envía.
+
+ Impacto:
+   Se cree tener una política de permisos (cámara, micrófono, geolocalización,
+   pago, USB) que en realidad no existe.
+
+ Recomendación:
+   Quitarlo de Helmet y añadir un middleware propio:
+
+     app.use((req, res, next) => {
+       res.setHeader("Permissions-Policy",
+         "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+       next();
+     });
+
+   Verificar con: curl -sI https://<host>/ | grep -i permissions-policy
+
+--------------------------------------------------------------------------------
+ M-11 · MEDIO · La versión mínima de Node declarada es incompatible
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/package.json
+ Tipo      : Despliegue / compatibilidad
+
+ Descripción:
+   "engines": { "node": ">=22.5.0" }
+
+   node:sqlite existe desde 22.5.0, pero requiere --experimental-sqlite hasta
+   22.13.0 (y hasta 23.4.0 en la línea 23). npm start ejecuta node server.js sin
+   flag, así que en Node 22.5-22.12 el arranque falla al importar el módulo.
+   El CI usa Node 24 y oculta el problema.
+
+ Impacto:
+   Un despliegue o un desarrollador con Node 22.7 sigue las instrucciones y la
+   aplicación no arranca, con un error poco claro.
+
+ Recomendación:
+   - Subir a ">=22.13.0" (o ">=22.16.0" si se adopta sqlite.backup()).
+   - Añadir .nvmrc con la versión usada en CI (24) y documentarla en README.
+   - Comprobar la versión al arrancar y mostrar un mensaje claro.
+
+--------------------------------------------------------------------------------
+ M-12 · MEDIO · El logout puede no revocar el refresh token
+--------------------------------------------------------------------------------
+ Ubicación : website/public/js/data.js:990-1003
+ Tipo      : Gestión de sesión
+
+ Descripción:
+   logout() lanza fetch(POST /logout) y navega inmediatamente a login.html. La
+   navegación puede cancelar la petición antes de que el servidor la procese.
+   El refresh token (30 días) queda válido aunque el usuario crea que cerró
+   sesión.
+
+ Impacto:
+   En un equipo compartido o robado, la sesión sigue viva. El botón "Cerrar
+   sesión" no cumple su promesa.
+
+ Recomendación:
+
+   async logout() {
+     try {
+       await fetch(`${API_BASE}/logout`, {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         credentials: "same-origin",
+         keepalive: true
+       });
+     } catch { /* sin red: se limpia igualmente el cliente */ }
+     navigator.serviceWorker?.controller?.postMessage({ type: "limpiar-cache-api" });
+     localStorage.removeItem("lc_sesion");
+     window.location.href = "login.html";
+   }
+
+   keepalive permite que la petición sobreviva a la navegación. Alternativa:
+   navigator.sendBeacon().
+
+--------------------------------------------------------------------------------
+ M-13 · MEDIO · El repositorio no es utilizable con git en esta copia
+--------------------------------------------------------------------------------
+ Ubicación : .git (archivo, no directorio)
+ Tipo      : Operación / control de versiones
+
+ Descripción:
+   .git contiene "gitdir: C:/Users/derec/OneDrive/.../LabControl-4.8", un
+   worktree de Windows. git status falla. Sin control de versiones no hay diff,
+   rollback ni trazabilidad; los workflows asumen la rama master.
+
+ Impacto:
+   Riesgo operativo alto: cualquier cambio se hace sin red de seguridad y no se
+   puede auditar quién cambió qué.
+
+ Recomendación:
+   Reclonar el repositorio en una ruta local (sin OneDrive) o reparar el
+   worktree con git worktree repair. Evitar trabajar sobre carpetas sincronizadas
+   por OneDrive: corrompen .git y bloquean archivos de SQLite en Windows.
+
+--------------------------------------------------------------------------------
+ M-14 · MEDIO · El deploy no espera al CI
+--------------------------------------------------------------------------------
+ Ubicación : .github/workflows/deploy-cloudflare.yml:3-15
+ Tipo      : CI/CD
+
+ Descripción:
+   El deploy se dispara en cada push a master en paralelo con ci.yml. Si el CI
+   falla, el deploy puede haberse publicado igualmente. Además
+   cancel-in-progress: true puede cancelar un despliegue a medias.
+
+ Impacto:
+   Se puede publicar una versión con tests rojos, con el consiguiente riesgo de
+   regresión en producción.
+
+ Recomendación:
+   - Ejecutar el deploy con workflow_run sobre CI y comprobar conclusion.
+   - O exigir branch protection con los checks de CI obligatorios.
+   - Usar concurrency con cancel-in-progress: false para deploys.
+
+--------------------------------------------------------------------------------
+ 5. HALLAZGOS BAJOS
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+ B-01 · BAJO · Errores de robustez en la interfaz
+--------------------------------------------------------------------------------
+ Ubicación : website/public/js/usuarios.js:174-180
+             website/public/js/laboratorios.js (lab.servicios.map)
+             website/public/js/app.js:816-820
+ Tipo      : Robustez
+
+   - abrirDetalle() accede a .page-header sin comprobar null.
+   - laboratorios.js usa lab.servicios.map(...) sin fallback si el campo viene
+     vacío o malformado.
+   - formatFecha() solo aplica regex; 2027-02-31 se muestra como 31/02/2027.
+
+   Recomendación: optional chaining y valores por defecto; validar la fecha en
+   el backend (M-03) y mostrar "—" si no es válida.
+
+--------------------------------------------------------------------------------
+ B-02 · BAJO · Tokens de restablecimiento en texto plano
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/db.js:459-465
+ Tipo      : Seguridad en reposo
+
+   contrasena_resets.token es la clave primaria en claro. Si se filtra la base
+   o un respaldo, los enlaces pendientes son utilizables hasta 30 minutos.
+
+   Recomendación:
+     const hash = createHash("sha256").update(token).digest("hex");
+     // Guardar hash; enviar el token original solo en el correo.
+     // Al validar, hashear el token recibido y buscar por hash.
+
+--------------------------------------------------------------------------------
+ B-03 · BAJO · Contraseñas de más de 72 bytes se truncan en bcrypt
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:49-50
+ Tipo      : Política de contraseñas
+
+   MAX_PASSWORD = 200, pero bcrypt solo considera los primeros 72 bytes. Dos
+   contraseñas distintas que compartan esos bytes son equivalentes.
+
+   Recomendación: limitar a 72 bytes (o 64 caracteres) o pre-hashear con
+   SHA-256 antes de bcrypt, migrando los hashes existentes de forma compatible.
+
+--------------------------------------------------------------------------------
+ B-04 · BAJO · IDs de cliente hasta 80 caracteres y registro sin límite
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:1000-1007 y 1566
+ Tipo      : Higiene de datos
+
+   nuevoId() acepta IDs de hasta 80 caracteres; el registro valida
+   ^[a-zA-Z0-9_]+$ sin máximo. Permite IDs desproporcionados en base y URLs.
+
+   Recomendación: acotar a 32 caracteres en ambos puntos y documentarlo.
+
+--------------------------------------------------------------------------------
+ B-05 · BAJO · Transacciones manuales sin protección de anidamiento
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:780 (notificarATodos)
+             website/backend/server.js:1870 (borrado de usuario)
+ Tipo      : Robustez
+
+   db.exec("BEGIN") falla si ya hay una transacción abierta. Hoy no ocurre, pero
+   un refactor que llame a notificarATodos() dentro de otra transacción
+   producirá "cannot start a transaction within a transaction" y un 500.
+
+   Recomendación: helper con SAVEPOINT:
+
+     function enTransaccion(fn) {
+       const punto = `sp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+       db.exec(`SAVEPOINT ${punto}`);
+       try { const r = fn(); db.exec(`RELEASE ${punto}`); return r; }
+       catch (e) { db.exec(`ROLLBACK TO ${punto}`); db.exec(`RELEASE ${punto}`); throw e; }
+     }
+
+--------------------------------------------------------------------------------
+ B-06 · BAJO · Detección de reutilización de refresh token con huecos
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:1372-1391
+ Tipo      : Seguridad de sesión
+
+   Si el token reutilizado ya fue podado (limpiarTokensVencidos o la poda de 5
+   por usuario), la fila no existe y se responde 401 sin revocar la familia.
+
+   Recomendación: mantener un token_version por usuario o tombstones de tokens
+   revocados durante más tiempo, y revocar todo ante un id desconocido pero con
+   firma válida.
+
+--------------------------------------------------------------------------------
+ B-07 · BAJO · Notificaciones sin clave foránea a reportes
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/db.js:160-170
+ Tipo      : Integridad referencial
+
+   reporte_id TEXT no referencia reportes(id). Al borrar un reporte quedan
+   notificaciones apuntando a un ID inexistente.
+
+   Recomendación: migración con
+     reporte_id TEXT REFERENCES reportes(id) ON DELETE SET NULL
+
+--------------------------------------------------------------------------------
+ B-08 · BAJO · La sesión del cliente es editable y el gating es solo visual
+--------------------------------------------------------------------------------
+ Ubicación : website/public/js/data.js:1009-1016
+ Tipo      : Defensa en profundidad
+
+   lc_sesion en localStorage es editable: un usuario puede ponerse rol admin y
+   ver páginas de administración. El backend las rechaza, pero la UI puede
+   confundir y el modo demo puede activarse.
+
+   Recomendación: no confiar en localStorage para decidir rutas; pedir un
+   /api/me al cargar y usar la respuesta del servidor para el gating.
+
+--------------------------------------------------------------------------------
+ B-09 · BAJO · Versión de /api/salud desincronizada
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/server.js:1179-1184
+ Tipo      : Operación
+
+   /api/salud devuelve version: "4.3" mientras web y backend son 4.8. Está
+   documentado como "versión de API" y el deploy compara el último commit que
+   tocó website/backend, pero depende de que alguien lo suba a mano cuando
+   cambie el comportamiento de la API.
+
+   Recomendación: inyectar la versión desde package.json en build o unificar el
+   criterio en una sola constante versionada.
+
+--------------------------------------------------------------------------------
+ B-10 · BAJO · Nombres de caché y plantilla desactualizados
+--------------------------------------------------------------------------------
+ Ubicación : website/public/service-worker.js:9
+ Tipo      : Cosmético / mantenibilidad
+
+   API_CACHE = "labcontrol-api-v4.2.0" mientras CACHE_NAME es v4.8.5. El
+   encabezado de `.env.example` ya está alineado con 4.8; queda el nombre de la
+   caché de API.
+
+   Recomendación: alinear versiones o derivarlas de una constante común.
+
+--------------------------------------------------------------------------------
+ B-11 · BAJO · Acciones de GitHub sin pin por SHA
+--------------------------------------------------------------------------------
+ Ubicación : .github/workflows/ci.yml y deploy-cloudflare.yml
+ Tipo      : Supply chain
+
+   actions/checkout@v4 y actions/setup-node@v4 usan etiquetas móviles.
+
+   Recomendación: fijar el SHA completo (Dependabot puede actualizarlo) y
+   limitar permissions: contents: read donde no se necesite más.
+
+--------------------------------------------------------------------------------
+ B-12 · BAJO · SQLite síncrono y validación de integridad incompleta
+--------------------------------------------------------------------------------
+ Ubicación : website/backend/db.js:58-68 y 1260-1422
+ Tipo      : Operación / recuperación
+
+   DatabaseSync bloquea el event loop en cada consulta (aceptable para un centro
+   pequeño). La restauración sí valida una copia temporal con `PRAGMA quick_check`
+   y el esquema requerido antes de intercambiar los archivos, y conserva una
+   `.prev` de la base anterior (db.js:1260-1280 y 1334+). Lo que falta:
+     - ejecutar `PRAGMA integrity_check` completo después de restaurar y de
+       aplicar migraciones, y abortar si falla;
+     - guardar un `.bak` antes de aplicar migraciones en un arranque normal;
+     - documentar el límite de concurrencia (un solo proceso).
+
+   Recomendación:
+   - Añadir `PRAGMA integrity_check` tras `reemplazarBaseDesdeBuffer()` y tras
+     las migraciones; si falla, restaurar la `.prev` y avisar.
+   - Copiar la base a `.bak` antes de cada migración con cambios de esquema.
+   - Documentar que el backend asume un único proceso escritor.
+
+--------------------------------------------------------------------------------
+ 6. RECOMENDACIONES TRANSVERSALES Y MEJORES IMPLEMENTACIONES
+--------------------------------------------------------------------------------
+
+ 6.1 Seguridad de sesión
+ -----------------------
+   - Cookies: mantener HttpOnly + SameSite=lax + Secure en producción. Ya está.
+   - Añadir un token CSRF explícito (double-submit) además de la comprobación de
+     Origin. La comprobación actual es correcta, pero un token CSRF protege
+     también si se relaja la política de Origin en el futuro.
+   - Rotar el refresh token en cada uso (ya se hace) y mantener token_version
+     por usuario para revocar todas las sesiones al cambiar contraseña o rol.
+   - 2FA obligatorio para admin y nivel "total"; opcional para técnicos.
+
+ 6.2 Validación de entrada
+ -------------------------
+   - Unificar toda la validación en express-validator o en un esquema central.
+   - Reglas mínimas por campo: tipo, longitud, rango, formato y pertenencia a
+     catálogos (tipo de reporte, estado, rol, nivel).
+   - Rechazar propiedades desconocidas en cuerpos sensibles (config, reportes)
+     para evitar mass assignment accidental.
+   - Validar fechas con componentes, no solo regex.
+
+ 6.3 Integridad de datos
+ -----------------------
+   - Calcular reportes en el backend; nunca generar datos en el cliente.
+   - Guardar un campo "origen" o "demo" en reportes y mostrarlo en la UI/CSV.
+   - Añadir claves foráneas que falten y comprobar PRAGMA foreign_key_check en
+     mantenimiento.
+   - Versionar el esquema y probar migraciones en una copia antes de producción.
+
+ 6.4 Respaldos y recuperación
+ ----------------------------
+   - Snapshot consistente (VACUUM INTO o sqlite.backup).
+   - integrity_check antes de entregar y después de restaurar.
+   - Probar la restauración periódicamente en un entorno de staging.
+   - Conservar varios puntos en el tiempo (no solo la última copia) y cifrar si
+     el respaldo sale del servidor.
+   - Documentar RPO/RTO: con copia manual, el RPO depende de la última descarga.
+
+   Niveles disponibles y decisión adoptada:
+
+   +---------------------+--------------------------------+-----------+------------------+
+   | Nivel               | Cubre                          | RPO       | Retención        |
+   +---------------------+--------------------------------+-----------+------------------+
+   | Descarga manual     | copia puntual y auditoría      | variable  | la que se guarde |
+   | Backups del volumen | datos, corrupción y redeploy   | 24 h      | 6/27/89 días     |
+   | Copia externa (R2)  | pérdida de volumen o proveedor | 24 h      | 90 días          |
+   +---------------------+--------------------------------+-----------+------------------+
+
+ 6.4.1 Línea base adoptada: backups del volumen de Railway
+ ---------------------------------------------------------
+   Se adopta como primera capa el backup automático del volumen, porque no
+   requiere código ni credenciales y cubre el riesgo más frecuente (corrupción
+   o borrado accidental de datos dentro del volumen). Se activa en el panel:
+     Servicio del backend → Settings → Backups → Daily + Weekly + Monthly.
+   Railway conserva: diario 6 días, semanal 27 días y mensual 89 días.
+   RPO: 24 h. RTO: minutos (restaurar y verificar).
+   Coste: Railway factura los backups como almacenamiento incremental del
+   volumen; con una base de pocos MB el importe es marginal, pero no es gratis.
+   Disponibilidad por plan: el plan Free no incluye backups del volumen
+   (maxBackupsCount = 0). Para activarlos hace falta un plan de pago que los
+   incluya; mientras tanto, la copia disponible es la descarga manual desde
+   Configuración → Respaldos.
+   Límites: los backups viven en el mismo proyecto y proveedor. Borrar el
+   volumen elimina también sus backups, y restaurar un punto descarta los
+   backups más nuevos creados después de ese punto. No protegen contra el
+   borrado del proyecto o de la cuenta, la suspensión de Railway ni una caída
+   prolongada. Para eso existe la capa siguiente.
+
+ 6.4.2 Copia fuera del proveedor (opcional, pendiente)
+ -----------------------------------------------------
+   El respaldo descargable resuelve la consistencia, pero no la durabilidad: si
+   se pierde el volumen (disco, instancia, cuenta de hosting), la única copia
+   desaparece con él. Además de la línea base, hay dos opciones para copiar
+   fuera del proveedor; la primera es la recomendada cuando se decida activarla.
+
+   Opción A — snapshot programado + copia externa (recomendada a futuro)
+     - Un cron, un servicio del sistema o el propio servidor (con
+       `LC_BACKUP_AUTO=1`) ejecuta a diario:
+         sqlite3 /ruta/labcontrol.db \
+           "VACUUM INTO '/ruta/backups/labcontrol-$(date +%F).db'"
+       o, desde la propia app, `crearCopiaConsistente()`.
+     - Verifica la copia con `PRAGMA integrity_check`.
+     - Súbela a S3/R2 (o a otra carpeta/equipo fuera del servidor) con
+       retención de 7/30/90 días y cifrado en reposo.
+     - Preparado en 8.3, NO activado: bucket R2 `labcontrol-backups/labcontrol/`,
+       respaldo diario a las 02:15 de America/Santiago desde el propio servidor
+       (`LC_BACKUP_AUTO=1`) y retención local de 30 días. La activación queda
+       como tarea opcional en PENDIENTES.txt.
+     - RPO: 24 h (o la frecuencia elegida). RTO: minutos.
+     - Ventaja: no cambia el runtime ni el `journal_mode` actual.
+
+   Opción B — WAL + Litestream (si se quiere RPO de segundos)
+     - Cambiar a `PRAGMA journal_mode = WAL` y ejecutar Litestream como
+       proceso aparte, replicando de forma continua a S3/R2.
+     - Ventaja: replicación continua y recuperación a un punto en el tiempo.
+     - Requisito: sistema de archivos local (no OneDrive ni SMB) y un solo
+       escritor. En Windows/OneDrive el WAL deja archivos `-wal`/`-shm` y
+       bloquea copias y restauraciones.
+
+   Nota sobre `journal_mode=DELETE`:
+     El código usa DELETE a propósito para evitar los bloqueos de Windows y
+     OneDrive. Eso no impide la Opción A: `VACUUM INTO` funciona igual y produce
+     una instantánea consistente. La Opción B sí exige mover la base a un
+     volumen local (o a Linux/Railway) antes de activar WAL.
+
+   En ambos casos:
+     - Probar la restauración al menos una vez al trimestre.
+     - No guardar la copia en la misma carpeta o volumen que la base.
+     - Cifrar la copia si sale del servidor y limitar quién puede leerla.
+     - Documentar RPO/RTO y la persona responsable del respaldo.
+
+ 6.4.3 Procedimiento de restauración (Railway)
+ ---------------------------------------------
+   Antes de restaurar, guarda el estado actual para no perder lo último:
+
+     railway volume files download /app/data/labcontrol.db \
+       ./labcontrol-antes-de-restaurar.db
+
+   (Ajusta la ruta al volumen real; también sirve Configuración → Respaldos en
+   la app.) Verifica la copia elegida antes de usarla:
+
+     sqlite3 ./labcontrol-antes-de-restaurar.db "PRAGMA integrity_check;"
+
+   Restauración desde un backup del volumen:
+
+     1. Servicio del backend → Settings → Backups → elegir el punto → Restore.
+     2. Revisar el volumen restaurado que Railway monta y confirmar Deploy.
+     3. Comprobar /api/salud y abrir el panel con una cuenta admin.
+     4. Ejecutar PRAGMA integrity_check sobre la base restaurada.
+     5. Revisar usuarios, agenda y equipos (que no estén vacíos ni truncados).
+     6. Anotar la fecha del punto restaurado y el motivo en el registro del
+        establecimiento.
+
+   Ten en cuenta que la restauración descarta los backups más nuevos que se
+   hayan creado después del punto elegido y solo funciona en el mismo proyecto
+   y entorno. Si necesitas conservar ese estado, descárgalo antes con
+   `railway volume files download` o desde Configuración → Respaldos.
+
+   Restauración desde una copia descargada (R2 o manual):
+
+     1. Detener el servicio o dejarlo en mantenimiento.
+     2. Reemplazar `labcontrol.db` en el volumen por la copia verificada.
+     3. Arrancar, comprobar integridad y repetir los pasos 3 a 6 anteriores.
+     4. Si algo falla, restaurar el archivo guardado en el primer paso.
+
+   La prueba completa se hace en un servicio de staging, nunca en producción.
+   Responsable sugerido: el administrador del sistema, con respaldo del
+   encargado de informática del establecimiento.
+
+ 6.5 Observabilidad
+ ------------------
+   - Logs estructurados (JSON) con request-id, usuario, ruta y latencia.
+   - No registrar tokens, contraseñas ni enlaces de restablecimiento.
+   - Alertas para: 500 repetidos, login fallido masivo, fallo de respaldo,
+     integrity_check fallido y errores de correo.
+   - Métricas simples: peticiones/min, latencia p95, tamaño de la base.
+
+ 6.6 Calidad y CI/CD
+ -------------------
+   - Hacer el deploy dependiente del CI (M-14).
+   - Añadir tests de integración para los casos de este informe: login con
+     mayúsculas, tipos no-string, 2027-02-31, datos de reporte malformados,
+     exportación de respaldo y restauración.
+   - Añadir un test que verifique las cabeceras de seguridad (incluida
+     Permissions-Policy).
+   - Fijar la versión de Node con .nvmrc y engines coherentes.
+   - Mantener Dependabot, pero revisar los moderados de la cadena de test.
+
+ 6.7 Experiencia de usuario y confianza
+ --------------------------------------
+   - Banner claro cuando el sistema está en modo demo.
+   - Aviso en reportes generados con datos de ejemplo.
+   - Mensajes de error que no revelen si un usuario existe (ya se hace en
+     recuperación; mantenerlo en login).
+   - Mostrar la fecha de la última copia de seguridad en el panel de admin.
+
+--------------------------------------------------------------------------------
+ 7. PUNTOS FUERTES (MANTENER)
+--------------------------------------------------------------------------------
+
+   - Consultas preparadas en todas las rutas; nuevoId() evita colisiones y
+     valida formato.
+   - bcrypt con hash ficticio para igualar tiempos en login fallido
+     (server.js:1101-1104).
+   - Cookies HttpOnly para acceso y refresh, con Secure cuando corresponde y
+     SameSite=lax (server.js:348-399).
+   - Revalidación del usuario en cada petición: un JWT vivo no conserva
+     permisos revocados (server.js:318-335).
+   - Redacción por rol de hardware/red (server.js:570-584) y de configuración
+     (server.js:591-596).
+   - Comprobación de Origin/Referer en escrituras con cookies (server.js:448-457)
+     y cuerpo JSON obligatorio, lo que reduce el riesgo de login CSRF.
+   - Rotación de refresh tokens con detección de reutilización y Web Locks en el
+     cliente para evitar carreras entre pestañas (data.js:604-619).
+   - Adjuntos: lista blanca de tipos, límite de 5 MB/10 archivos y verificación
+     de magic bytes (server.js:881-975).
+   - CSV: neutralización de fórmulas (reportes.js:552-561).
+   - Escape HTML consistente con esc(); no se encontraron interpolaciones
+     peligrosas en las vistas.
+   - Auditoría de acciones sensibles y limpieza periódica de tablas.
+   - Migraciones versionadas con revertir() y validación del respaldo restaurado
+     (db.js:1266+).
+   - Tests, lint, typecheck y sintaxis en verde; CI con auditoría de
+     dependencias y E2E.
+
+--------------------------------------------------------------------------------
+ 8. PLAN DE ACCIÓN PRIORIZADO
+--------------------------------------------------------------------------------
+
+ FASE 0 — Verificación inmediata (hoy)
+   [x] C-01  Detectar credenciales demo y permitir abortar el arranque.
+   [ ] Revisar auditoría por accesos con esa cuenta.
+   [ ] Activar 2FA en todas las cuentas admin.
+
+ FASE 1 — Esta semana
+   [x] A-01  Reportes con datos reales o marcados como demo.
+   [x] A-02  Respaldo con snapshot consistente + integrity_check.
+   [x] DUR   Script de instantánea, retención, verificación y copia externa (listo, sin activar).
+   [x] DUR   Backups del volumen de Railway: alcance y procedimiento definidos (6.4.1, 6.4.3).
+   [ ] DUR   Activar los backups del volumen en el panel de Railway (línea base).
+   [ ] DUR   Opcional (fase 3): bucket/token R2 y variables en Railway.
+   [x] M-01  Login con correo sin distinguir mayúsculas.
+   [x] M-02  Validar tipos en login (400 en vez de 500).
+   [x] M-03  Validar fechas reales en agenda y reportes.
+   [x] M-04  Saneamiento y render tolerante de los datos de reportes.
+   [x] M-07  No imprimir tokens en producción y exigir LC_PUBLIC_URL.
+
+ FASE 2 — Este mes
+   [x] M-05  Modo demo explícito y con credenciales válidas.
+   [x] M-06  Actividad real o eliminar la pestaña.
+   [x] M-08  Esquema de validación para /api/config.
+   [x] M-09  Limpiar caché de API al login/expiración.
+   [x] M-10  Permissions-Policy real.
+   [x] M-11  engines >=22.13.0 y .nvmrc.
+   [x] M-12  Logout con keepalive.
+   [x] M-13  Reparar git / reclonar.
+   [x] M-14  Deploy dependiente del CI.
+
+ FASE 3 — Trimestre
+   [x] B-01 a B-12 según prioridad del equipo.
+   [x] Tests de regresión para todos los casos anteriores.
+   [ ] Logs estructurados y alertas.
+   [ ] DUR   Activar la copia externa en R2 si se quiere protección fuera de Railway.
+   [ ] Prueba de restauración de respaldo en staging.
+
+--------------------------------------------------------------------------------
+ 8.1 ESTADO DE LAS CORRECCIONES APLICADAS
+--------------------------------------------------------------------------------
+
+ Se corrigieron el hallazgo crítico condicional y los dos altos. Los cambios se
+ limitan a esos puntos: no se tocó el esquema de la base, el modo de journal ni
+ la API pública existente.
+
+ C-01 · Credenciales demo (website/backend/db.js, server.js)
+
+   - `cuentasDemoSinRotar()` compara el hash guardado con el publicado y
+     devuelve los IDs pendientes, sin exponer el hash.
+   - La comprobación se ejecuta SIEMPRE al arrancar (antes solo si la semilla
+     estaba desactivada), de modo que una base antigua migrada también avisa.
+   - `LC_EXIGIR_ROTACION_DEMO=1` aborta el arranque si quedan credenciales
+     conocidas. Se ignora con `LC_SEED_DEMO=1` para no romper el desarrollo,
+     pero igualmente se imprime el aviso.
+   - `/api/salud` detallado (con `x-lc-salud-token`) añade
+     `cuentasDemoPendientes: <n>`; el endpoint público sigue devolviendo solo
+     `{ ok: true }`.
+
+   Acción pendiente fuera del código: probar la credencial en la instancia real,
+   rotarla si funciona, revocar sus refresh tokens y revisar la auditoría.
+
+ A-01 · Reportes con datos reales (server.js, reportes.js)
+
+   - `calcularDatosReporte()` obtiene los datos de las tablas:
+       uso             → horas reservadas por laboratorio en el mes del reporte
+                         (JOIN agenda); redondeo a un decimal.
+       disponibilidad  → % de equipos activos por laboratorio (JOIN equipos),
+                         con respaldo al estado del laboratorio en bases
+                         antiguas sin inventario individual.
+       fallas          → equipos en estado 'falla', con su descripción real.
+       inventario      → conteo por estado sobre la tabla equipos, con respaldo
+                         a la ficha del laboratorio si la tabla está vacía.
+   - `POST /api/reportes` y `PATCH /api/reportes/:id` ignoran `datos` del cliente
+     para esos cuatro tipos y recalculan el contenido. Editar un reporte no
+     permite reinyectar cifras inventadas.
+   - Se eliminó `generarDatosMock()` del cliente; al crear ya no se envían
+     cifras. La vista tolera datos ausentes o malformados (arrays vacíos,
+     valores no numéricos) y muestra un aviso en vez de romperse.
+   - Los reportes de tipo "otro" conservan el contenido libre del cliente.
+
+ A-02 · Respaldo consistente (db.js, server.js)
+
+   - `crearCopiaConsistente()` usa `VACUUM INTO` en un archivo temporal oculto
+     (`.labcontrol-temporal-respaldo-…`), ejecuta `PRAGMA integrity_check` sobre
+     la copia y la borra si la verificación falla.
+   - `GET /api/backups/exportar` sirve esa instantánea con `res.download()`
+     (`dotfiles: "allow"`) y elimina el temporal siempre, con éxito o error.
+     Si el proceso muere, `limpiarTemporales()` barre los restos al arrancar.
+   - La respuesta conserva `Content-Type: application/octet-stream` y añade
+     `Content-Length`; el nombre descargado no revela rutas del sistema.
+
+ Verificación ejecutada tras los cambios:
+
+   +----------------------------------+--------------------------------------+
+   | Comprobación                     | Resultado                            |
+   +----------------------------------+--------------------------------------+
+   | npm test                         | 127/127 pruebas, 7 suites      OK    |
+   | npm run lint                     | Sin errores                    OK    |
+   | npm run typecheck                | Sin errores                    OK    |
+   | npm run check                    | 16/16 archivos                 OK    |
+   | Exportación + integrity_check    | 200, copia íntegra, sin restos OK    |
+   | Reporte "uso" agosto 2026        | [4; 1,5; 4; 0; 2] h reales     OK    |
+   | Inventario                       | 138 total / 110 activos        OK    |
+   | PATCH con datos falsos           | recalcula, no persiste el falso OK   |
+   +----------------------------------+--------------------------------------+
+
+   Tests añadidos: datos calculados en creación y edición, inventario real,
+   snapshot íntegro, detección de credenciales demo y `cuentasDemoPendientes`
+   en `/api/salud`.
+
+ Sigue pendiente de acción en infraestructura (el código ya está listo; ver 8.3):
+
+   - DUR  activar los backups automáticos del volumen en el panel de Railway
+          (línea base, ver 6.4.1) y probar una restauración en staging.
+   - DUR  opcional: crear el bucket R2 `labcontrol-backups` y el token con
+          Object Read & Write, y cargar las variables en Railway. El script, el
+          destino, la retención y el horario ya están preparados (sección 8.3).
+
+ Nota sobre el orden de trabajo: estas correcciones se hicieron sobre SQLite y
+ sin migrar a PostgreSQL. El cambio de motor obligaría a reescribir la capa de
+ datos (síncrona a asíncrona), las 132 llamadas a `.prepare()` de `server.js`,
+ las migraciones y los tests; no es un paso previo necesario para cerrar los
+ hallazgos de integridad.
+
+--------------------------------------------------------------------------------
+ 8.2 CORRECCIONES M-01, M-02 y M-03
+--------------------------------------------------------------------------------
+
+ M-01 · Login con correo sin distinguir mayúsculas (server.js)
+
+   - El identificador se normaliza con `trim()` y el correo se compara con
+     `lower(email) = lower(?)`. `ADMIN@LICEO.CL` y `  Admin@Liceo.Cl  ` entran
+     con la misma contraseña; el ID de usuario sigue siendo exacto.
+   - Se añadió una prueba que cubre mayúsculas y espacios.
+
+ M-02 · Tipos no-string en el login (server.js)
+
+   - Antes de tocar SQLite o bcrypt se exige que `usuario` y `password` sean
+     cadenas; un objeto, un array o un número devuelven 400 con un mensaje
+     claro en vez de 500.
+   - Se limita la longitud del identificador (254) y de la contraseña (200).
+   - El segundo paso (`/api/login/2fa`) valida igual `loginId` y `codigo`.
+   - La auditoría de login fallido registra ahora el identificador ya
+     normalizado.
+
+ M-03 · Fechas reales (server.js)
+
+   - Nueva `esFechaISOValida()`: además de la forma AAAA-MM-DD, reconstruye la
+     fecha con `Date.UTC` y comprueba año, mes y día. Rechaza `2027-02-31`,
+     `2023-02-29` y cualquier día fuera de calendario; acepta `2024-02-29`.
+   - Se aplica en `POST /api/agenda`, `POST /api/reportes` y
+     `PATCH /api/reportes/:id`. El cálculo de anticipación de la agenda ya no
+     puede usar una fecha distinta de la guardada.
+
+ Verificación específica:
+
+   +------------------------------+--------------------------------------+
+   | Caso                         | Resultado                            |
+   +------------------------------+--------------------------------------+
+   | ADMIN@LICEO.CL               | 200, sesión de INSUCO          OK    |
+   | usuario objeto / array       | 400 "deben ser texto"          OK    |
+   | password numérica            | 400 "deben ser texto"          OK    |
+   | 2FA con loginId objeto       | 400                            OK    |
+   | reporte 2027-02-31           | 400                            OK    |
+   | reporte 2023-02-29           | 400                            OK    |
+   | reporte 2024-02-29           | 201 y fecha persistida         OK    |
+   | edición con 2027-02-31       | 400, no se persiste            OK    |
+   | agenda 2099-02-31            | 400                            OK    |
+   +------------------------------+--------------------------------------+
+
+   Tests añadidos: login con correo en mayúsculas/espacios, tipos no-string en
+   login y 2FA, agenda con día inexistente y reportes con 29 de febrero válido
+   e inválido en creación y edición.
+
+--------------------------------------------------------------------------------
+ 8.3 CORRECCIONES M-04 Y DURABILIDAD EXTERNA
+--------------------------------------------------------------------------------
+
+ M-04 · Datos de reporte saneados y render tolerante (server.js, reportes.js)
+
+   - `serializarDatos()` sanea el contenido antes de guardarlo:
+       * copia profunda con `limpiarDatosLibres()` (máximo 12 niveles);
+       * descarta `__proto__`, `constructor` y `prototype` en cualquier nivel;
+       * convierte números no finitos (NaN/Infinity) a `null`;
+       * mantiene el tope de 256 KB serializados y devuelve 400 si se supera.
+   - El render del cliente usa arrays vacíos y valores por defecto cuando
+     `labels`, `valores` o `fallas` no son listas. Un reporte antiguo con datos
+     incompletos muestra el aviso "sin datos" en lugar de un TypeError.
+   - `repFromRow()` y la edición usan `parsearJSON()`: un registro con JSON
+     corrupto se lee como `{}` o `[]` y se puede reparar. Antes, un solo
+     registro corrupto tumbaba el listado o el detalle completo.
+   - Los tipos calculados siguen regenerando su contenido desde las tablas
+     (A-01); el tipo "otro" conserva el contenido libre, ya saneado. No se
+     rechaza una forma libre concreta: se garantiza que ningún contenido pueda
+     romper la vista ni contaminar el prototipo.
+
+   Verificación:
+
+   +------------------------------------+-----------------------------------+
+   | Caso                               | Resultado                         |
+   +------------------------------------+-----------------------------------+
+   | `datos` con `__proto__` anidado    | 201, clave eliminada         OK   |
+   | JSON corrupto en la base           | detalle 200 con `{}`         OK   |
+   | edición de un registro corrupto    | 200, datos reparados         OK   |
+   | reporte con `labels: null`         | render sin TypeError         OK   |
+   | carga mayor de 256 KB              | 400                          OK   |
+   +------------------------------------+-----------------------------------+
+
+ DUR · Respaldo fuera del servidor
+
+   - Nuevo `website/backend/scripts/respaldo-externo.mjs` y comando
+     `npm run respaldo`:
+       * `crearInstantanea()` usa `VACUUM INTO` (copia consistente aunque el
+         servidor esté escribiendo) y fija `PRAGMA busy_timeout = 10000`;
+       * `verificarIntegridad()` ejecuta `PRAGMA integrity_check` antes de dar
+         la copia por buena;
+       * `podarRespaldos()` aplica retención por días
+         (`LC_BACKUP_RETENCION_DIAS`, 30 por defecto) y conserva siempre las
+         últimas N copias (`LC_BACKUP_CONSERVAR`, 7 por defecto); solo borra
+         archivos `labcontrol-*.db` generados por el script;
+       * `copiarFuera()` replica a `LC_BACKUP_COPIAR_A` (otro disco, NAS o USB)
+         y verifica la copia;
+       * `subirAS3()` sube con el SDK de AWS a `LC_BACKUP_S3_URI` (funciona con
+         Cloudflare R2 mediante `LC_BACKUP_S3_ENDPOINT` y `LC_BACKUP_S3_REGION=auto`)
+         y guarda el SHA-256 de la copia en los metadatos del objeto. No hace
+         falta instalar `awscli` en la imagen.
+   - Destino preparado (no activado): bucket privado de Cloudflare R2
+     `labcontrol-backups`, prefijo `labcontrol/`, con regla de ciclo de vida de
+     90 días. El RPO es de 24 h y el RTO de minutos cuando se active.
+   - Programación preparada: el propio servidor ejecuta el respaldo a las
+     **02:15 de America/Santiago** cuando `LC_BACKUP_AUTO=1`. Revisa cada 5
+     minutos, escribe la marca `.ultimo-respaldo` para no repetirlo el mismo
+     día y, si el proceso estuvo caído a esa hora, recupera la copia en la
+     primera revisión tras el arranque. Si la subida falla, deja
+     `.ultimo-intento` y no reintenta hasta el día siguiente (una ejecución
+     manual con `npm run respaldo` lo fuerza). No depende de cron ni de un
+     servicio extra de Railway.
+   - Estado actual: mientras no se definan `LC_BACKUP_AUTO` y un destino
+     (S3/R2 o carpeta externa), el programador no se inicia y no se sube nada.
+     La línea base elegida es el backup automático del volumen de Railway
+     (6.4.1); la copia en R2 queda para la fase 3.
+   - Variables en Railway: `LC_BACKUP_AUTO`, `LC_BACKUP_HORA`,
+     `LC_BACKUP_TZ`, `LC_BACKUP_S3_URI`, `LC_BACKUP_S3_ENDPOINT`,
+     `LC_BACKUP_S3_REGION`, `AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY`.
+     Están documentadas en `.env.example` y `README.md`.
+   - Si no hay destino externo configurado, el script avisa de que la copia
+     sigue en el mismo volumen que la base; no falla en silencio. En Railway se
+     activarán además los backups automáticos del volumen como línea base.
+   - Sobre `journal_mode`: se mantiene `DELETE` (no WAL) porque la base puede
+     vivir en Windows/OneDrive, donde WAL y los bloqueos compartidos dan
+     problemas. Si se traslada a un volumen Linux propio, la alternativa es
+     WAL + Litestream; no es necesario para esta corrección.
+
+   Verificación:
+
+   +------------------------------------+-----------------------------------+
+   | Caso                               | Resultado                         |
+   +------------------------------------+-----------------------------------+
+   | `npm run respaldo` con copia local | instantánea + copia externa  OK   |
+   | `PRAGMA integrity_check`           | ok en original y copia       OK   |
+   | retención                          | borra antiguas, conserva N   OK   |
+   | respaldo programado (AUTO=1)       | ejecuta y deja marca diaria  OK   |
+   | zona America/Santiago              | 02:15 en invierno y verano   OK   |
+   | subida S3/R2 (endpoint local)      | PUT con clave y SHA-256      OK   |
+   | sin destino externo                | aviso explícito              OK   |
+   | archivos ajenos a `labcontrol-*`   | no se tocan                  OK   |
+   +------------------------------------+-----------------------------------+
+
+   Tests añadidos: saneamiento de claves de prototipo, lectura de JSON
+   corrupto, instantánea con datos reales, integridad, retención, copia
+   externa, subida S3 simulada, zona horaria, disparo diario y marcas
+   `.ultimo-respaldo` / `.ultimo-intento`.
+   La subida a R2 se probó contra un endpoint S3 local; no se usaron
+   credenciales reales porque el bucket aún no existe.
+
+--------------------------------------------------------------------------------
+ 8.4 CIERRE DE M-05 A M-14 Y B-01 A B-12
+--------------------------------------------------------------------------------
+
+ Estado: CORREGIDO en código. Los 12 hallazgos medios y los 12 bajos quedan
+ cerrados; la verificación completa es 132 tests unitarios + 39 pruebas E2E en
+ verde, además de lint, typecheck y chequeo de sintaxis.
+
+ URL públicas limpias (petición del usuario)
+   - Las páginas enlazan ahora a /login, /equipos, /… y la raíz es /.
+   - Cloudflare Pages: `website/public/_redirects` devuelve 308 desde
+     `/pagina.html` a `/pagina` (y desde `/index.html` a `/`).
+   - Express local: middleware de redirección 308 antes de `express.static`,
+     que además conserva la cadena de consulta; `extensions: ["html"]` sirve
+     las rutas limpias. No se sirve el .html con un 200 duplicado.
+   - E2E, Playwright y README actualizados a rutas sin extensión.
+
+ Medios
+   M-05  El modo demo solo se activa con `?demo=1` o `LC_FORZAR_DEMO`, muestra
+         un banner visible y usa la credencial pública `Demo12345`. Ya no hay
+         respaldo automático ante errores de red, 404 ni respuestas no JSON.
+   M-06  La pestaña "Actividad" lee `/api/auditoria` del usuario (solo admin).
+         Se eliminó `mockActividad()` y sus fechas fijas de agosto de 2026.
+   M-07  El token de recuperación nunca se imprime en logs. En producción son
+         obligatorias `RESEND_API_KEY` y `LC_PUBLIC_URL` (el arranque falla si
+         falta la segunda); el host entrante no decide los enlaces.
+   M-08  `PATCH /api/config` valida secciones, claves, tipos y rangos conocidos
+         (`CONFIG_ESQUEMA`) y devuelve 400 con `details`. No se borran las
+         claves no enviadas. Regresiones añadidas en `tests/api.test.js`.
+   M-09  `limpiarCacheApi()` se exporta y se llama al hacer login, verificar 2FA
+         y recibir 401; el service worker descarta `API_CACHE` ante un 401.
+   M-10  Express emite `Permissions-Policy` explícita; se eliminó el bloque
+         anidado inválido de Helmet que hacía que la cabecera nunca saliera.
+   M-11  `engines >=22.13.0` en package.json/package-lock.json, `.nvmrc` con 24
+         y comprobación de versión al arrancar.
+   M-12  `AUTH.logout()` usa `keepalive`, un `AbortController` de 2 s y limpia
+         `lc_sesion` y `lc_reset_demo` aunque falle la red o el servidor.
+   M-13  El `.git` apócrifo se sustituyó por un clone real del repositorio
+         (`d5aea01`, rama master); `git status` y el historial funcionan.
+   M-14  El deploy de Cloudflare corre por `workflow_run` tras CI en verde del
+         commit exacto (`head_sha`), con `cancel-in-progress: false`, actions
+         fijadas por SHA, CLI versionadas y comprobación de rutas/redirecciones.
+
+ Bajos
+   B-01  `setDisplay()` con optional chaining, `lab.servicios` con valor por
+         defecto y `formatFecha()` que valida el día real (2027-02-31 → "—").
+   B-02  `contrasena_resets` guarda SHA-256 del token; el claro solo viaja en el
+         correo. Tests adaptados al token conocido hasheado.
+   B-03  Límite real de 72 bytes UTF-8 en bcrypt (cliente y servidor) y tope de
+         200 caracteres en el login para no truncar contraseñas distintas.
+   B-04  IDs de cliente limitados a 32 caracteres en `nuevoId()`, registro y
+         creación de usuarios.
+   B-05  Helper `enTransaccion()` con SAVEPOINT usado en `notificarATodos()` y
+         en el borrado de usuario; un fallo parcial ya no deja la operación a
+         medias.
+   B-06  La reutilización de un refresh ya podado usa `decoded.sub` para revocar
+         toda la familia y auditar el evento.
+   B-07  Migración 13: `notificaciones.reporte_id` referencia `reportes(id)` con
+         `ON DELETE SET NULL`. SQLite no permite `ADD CONSTRAINT`, así que se
+         reconstruye la tabla y se limpian las referencias huérfanas. Tests de
+         versiones actualizados a 13.
+   B-08  Endpoint `GET /api/me` y `AUTH.sesionVerificada()`. `renderSidebar()`
+         es async y reescribe `lc_sesion` con la respuesta del servidor antes
+         de decidir menús y botones; ante fallo no se usa el localStorage.
+   B-09  `/api/salud` reporta `version: "4.8"`.
+   B-10  `VERSION = "4.8.6"` en el service worker; `CACHE_NAME` y `API_CACHE` se
+         derivan de esa única constante.
+   B-11  Actions fijadas por SHA y CLIs de Wrangler/Railway fijadas a versiones
+         exactas en los workflows.
+   B-12  `PRAGMA integrity_check` completo al abrir/exportar/restaurar, copia
+         `.bak` antes de migrar y documentación del límite de un solo proceso
+         escritor en README. Tests de regresión para la migración y el respaldo.
+
+ Sigue pendiente fuera del código (no son hallazgos del informe): activar los
+ backups del volumen en Railway, configurar Resend/Google/R2, renovar el token
+ de Railway, rotar credenciales de ejemplo y publicar este cambio para que las
+ URLs limpias se vean en el subdominio.
+
+--------------------------------------------------------------------------------
+ 9. ANEXO — REPRODUCCIÓN DE LOS HALLAZGOS VALIDADOS
+--------------------------------------------------------------------------------
+
+ Nota: este anexo conserva las reproducciones originales de la auditoría, con el
+ resultado actual esperado entre paréntesis. Los casos M-01 a M-03 ya devuelven
+ 200/400 según lo descrito en 8.2, y M-04 se sanea y se renderiza sin romper la
+ vista según 8.3. Se mantienen aquí como prueba de regresión y para documentar
+ el fallo que se encontró.
+
+ Requisitos: servidor local en el puerto 3123 con base temporal y semilla demo.
+
+   rm -rf /tmp/lc-audit && mkdir -p /tmp/lc-audit
+   LC_DB_DIR=/tmp/lc-audit LC_SEED_DEMO=1 PORT=3123 node server.js
+
+ 9.1 Login con correo en mayúsculas (M-01)
+
+   curl -s -o /dev/null -w "%{http_code}\n" \
+     -H "Content-Type: application/json" \
+     -d '{"usuario":"admin@liceo.cl","password":"Insuco1336"}' \
+     http://localhost:3123/api/login          # 200
+
+   curl -s -o /dev/null -w "%{http_code}\n" \
+     -H "Content-Type: application/json" \
+     -d '{"usuario":"ADMIN@LICEO.CL","password":"Insuco1336"}' \
+     http://localhost:3123/api/login          # 200 (antes 401)
+
+ 9.2 Tipos no-string en login (M-02)
+
+   curl -s -w "\n%{http_code}\n" \
+     -H "Content-Type: application/json" \
+     -d '{"usuario":{"a":1},"password":"x"}' \
+     http://localhost:3123/api/login          # 400 (antes 500)
+
+ 9.3 Fecha imposible en agenda (M-03)
+
+   curl -s -b cookies.txt \
+     -H "Origin: http://localhost:3123" \
+     -H "Content-Type: application/json" \
+     -d '{"labId":1,"fecha":"2027-02-31","motivo":"prueba",
+          "horaInicio":"08:00","horaFin":"09:00"}' \
+     http://localhost:3123/api/agenda         # 400 (antes 201)
+
+ 9.4 Datos de reporte malformados (M-04)
+
+   curl -s -b cookies.txt \
+     -H "Origin: http://localhost:3123" \
+     -H "Content-Type: application/json" \
+     -d '{"tipo":"uso","titulo":"prueba","descripcion":"prueba",
+          "datos":{"labels":null},"fecha":"2026-08-15"}' \
+     http://localhost:3123/api/reportes       # 201; datos saneados y render sin TypeError
+
+ 9.5 Cabecera Permissions-Policy ausente (M-10)
+
+   curl -sI http://localhost:3123/ | grep -i permissions-policy
+   # sin salida: la cabecera no se emite
+
+ 9.6 Versión mínima de Node (M-11)
+
+   # En Node 22.5-22.12:
+   node -e 'import("node:sqlite")'
+   # Error: No such built-in module: node:sqlite
+   # Requiere --experimental-sqlite; desde 22.13 funciona sin flag.
+
+--------------------------------------------------------------------------------
+ 10. CONCLUSIÓN
+--------------------------------------------------------------------------------
+
+ LabControl 4.8 es un proyecto cuidado, con buenas prácticas de seguridad y una
+ batería de calidad que pasa completa. No requiere una reescritura ni presenta
+ fallos críticos confirmados en el código actual.
+
+ El trabajo de INTEGRIDAD ya está hecho: los reportes se calculan con datos
+ reales y toleran datos antiguos o malformados, el respaldo se entrega como
+ instantánea consistente y los fallos funcionales de login, tipos y fechas
+ (M-01 a M-04) están corregidos. Las fases 2 y 3 también están cerradas en
+ código: modo demo explícito, actividad real, esquema de configuración, caché
+ de API, cabeceras, versión de Node, logout fiable, git reparado, deploy ligado
+ a CI y los doce hallazgos bajos (resumen en 8.4). Las URL públicas ya no
+ muestran `.html`: las rutas limpias son canónicas y las antiguas redirigen 308.
+
+ Quedan acciones de infraestructura, no de código: activar los backups del
+ volumen en Railway (6.4.1), configurar Resend/Google/R2, renovar el token de
+ Railway, rotar credenciales de ejemplo y publicar el cambio para que el
+ subdominio sirva las rutas limpias. La copia fuera del proveedor en R2 está
+ implementada y documentada como opción pendiente (6.4.2).
+
+ Con las fases 0 a 3 de este informe, el sistema queda en un estado sólido para
+ uso institucional y con una base clara para auditorías futuras.
+
+================================================================================
+ FIN DEL INFORME
+================================================================================

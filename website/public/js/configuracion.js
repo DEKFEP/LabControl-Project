@@ -13,7 +13,7 @@ const CONFIG_DEFAULT = {
 };
 
 /* configuracion.js — lógica de la página Configuración. */
-renderSidebar("configuracion.html");
+await renderSidebar("configuracion");
 const esAdmin = AUTH.esAdmin();
 const sesion  = AUTH.getSesion();
 // La verificación en dos pasos solo se ofrece a cuentas con acceso técnico o de
@@ -825,7 +825,7 @@ function abrirAyudaDesdePerfil() {
 }
 window.addEventListener("hashchange", abrirAyudaDesdePerfil);
 document.addEventListener("click", e => {
-  if (e.target.closest('a[href="configuracion.html#ayuda"], #btn-ayuda-movil')) {
+  if (e.target.closest('a[href="configuracion#ayuda"], #btn-ayuda-movil')) {
     e.preventDefault();
     history.replaceState(null, "", "#ayuda");
     abrirAyuda("faq");

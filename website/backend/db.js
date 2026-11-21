@@ -39,6 +39,19 @@ export function alRestaurar(fn) {
 const PREFIJO_TEMPORAL = ".labcontrol-temporal-";
 const rutaTemporal = (sufijo) => path.join(DB_DIR, `${PREFIJO_TEMPORAL}${sufijo}`);
 
+// Comprobación completa de integridad (B-12). `quick_check` solo mira páginas;
+// `integrity_check` revisa también índices y claves foráneas. Se usa al exportar,
+// al validar un respaldo recibido y al abrir la base tras aplicar migraciones.
+function verificarIntegridadTotal(d, mensaje = "La base de datos no pasó la verificación de integridad") {
+  const fila = d.prepare("PRAGMA integrity_check").get();
+  const resultado = fila ? Object.values(fila)[0] : null;
+  if (resultado !== "ok") {
+    const err = new Error(mensaje);
+    err.status = 500;
+    throw err;
+  }
+}
+
 // Borra los temporales que hubiera dejado una restauración interrumpida, para
 // que un corte de luz no ensucie la carpeta de datos (idempotente).
 function limpiarTemporales() {
@@ -63,8 +76,17 @@ async function abrirConexion(ruta = DB_PATH) {
   d.exec("PRAGMA foreign_keys = ON");
   // Windows libera handles con retardo; esperar en lugar de fallar.
   d.exec("PRAGMA busy_timeout = 15000");
+  // Copia de seguridad antes de migrar una base existente: así se puede volver
+  // atrás si una migración deja la base inconsistente (B-12).
+  const hayTablas = Boolean(d.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'usuarios'").get());
+  if (ruta === DB_PATH && hayTablas && estadoMigraciones(d).faltantes.length) {
+    try { fs.copyFileSync(ruta, `${ruta}.bak`); } catch (err) {
+      console.error("No se pudo crear la copia previa a las migraciones:", err?.message || err);
+    }
+  }
   crearEsquema(d);
   await aplicarMigraciones(d);
+  verificarIntegridadTotal(d);
   return d;
 }
 
@@ -163,7 +185,7 @@ CREATE TABLE IF NOT EXISTS notificaciones (
   tipo         TEXT NOT NULL,
   titulo       TEXT NOT NULL,
   mensaje      TEXT,
-  reporte_id   TEXT,
+  reporte_id   TEXT REFERENCES reportes(id) ON DELETE SET NULL,
   usuario_ref  TEXT REFERENCES usuarios(id) ON DELETE SET NULL,
   fecha        TEXT,
   leida        INTEGER DEFAULT 0
@@ -645,6 +667,74 @@ const MIGRACIONES = [
       }
     },
     nota: "Se pierde el enlace directo desde las notificaciones a la ficha del usuario."
+  },
+  {
+    version: 13,
+    nombre: "clave foránea de notificaciones.reporte_id a reportes(id)",
+    migrar(d) {
+      const fks = d.prepare("PRAGMA foreign_key_list(notificaciones)").all();
+      if (fks.some((f) => f.from === "reporte_id" && f.table === "reportes")) return;
+      // SQLite no permite ADD CONSTRAINT: hay que reconstruir la tabla.
+      d.exec(`
+        CREATE TABLE notificaciones_v13 (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          usuario_id   TEXT REFERENCES usuarios(id) ON DELETE CASCADE,
+          tipo         TEXT NOT NULL,
+          titulo       TEXT NOT NULL,
+          mensaje      TEXT,
+          reporte_id   TEXT REFERENCES reportes(id) ON DELETE SET NULL,
+          solicitud_id INTEGER REFERENCES solicitudes_especialidad(id),
+          usuario_ref  TEXT REFERENCES usuarios(id) ON DELETE SET NULL,
+          fecha        TEXT,
+          leida        INTEGER DEFAULT 0
+        )
+      `);
+      // Las notificaciones antiguas que apuntaban a reportes ya borrados se
+      // dejan sin referencia antes de copiar, para no violar la FK nueva.
+      d.exec(`
+        UPDATE notificaciones
+        SET reporte_id = NULL
+        WHERE reporte_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM reportes WHERE id = reporte_id)
+      `);
+      d.exec(`
+        INSERT INTO notificaciones_v13
+          (id, usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, usuario_ref, fecha, leida)
+        SELECT id, usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, usuario_ref, fecha, leida
+        FROM notificaciones
+      `);
+      d.exec("DROP TABLE notificaciones");
+      d.exec("ALTER TABLE notificaciones_v13 RENAME TO notificaciones");
+      d.exec("CREATE INDEX IF NOT EXISTS idx_notificaciones_usuario ON notificaciones(usuario_id, id)");
+    },
+    revertir(d) {
+      const fks = d.prepare("PRAGMA foreign_key_list(notificaciones)").all();
+      if (!fks.some((f) => f.from === "reporte_id" && f.table === "reportes")) return;
+      d.exec(`
+        CREATE TABLE notificaciones_v13_ant (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          usuario_id   TEXT REFERENCES usuarios(id) ON DELETE CASCADE,
+          tipo         TEXT NOT NULL,
+          titulo       TEXT NOT NULL,
+          mensaje      TEXT,
+          reporte_id   TEXT,
+          solicitud_id INTEGER REFERENCES solicitudes_especialidad(id),
+          usuario_ref  TEXT REFERENCES usuarios(id) ON DELETE SET NULL,
+          fecha        TEXT,
+          leida        INTEGER DEFAULT 0
+        )
+      `);
+      d.exec(`
+        INSERT INTO notificaciones_v13_ant
+          (id, usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, usuario_ref, fecha, leida)
+        SELECT id, usuario_id, tipo, titulo, mensaje, reporte_id, solicitud_id, usuario_ref, fecha, leida
+        FROM notificaciones
+      `);
+      d.exec("DROP TABLE notificaciones");
+      d.exec("ALTER TABLE notificaciones_v13_ant RENAME TO notificaciones");
+      d.exec("CREATE INDEX IF NOT EXISTS idx_notificaciones_usuario ON notificaciones(usuario_id, id)");
+    },
+    nota: "Se conservan las notificaciones; las que apuntaban a reportes borrados quedan sin reporte_id."
   }
 ];
 
@@ -802,6 +892,12 @@ const SEMILLA_VERSION = 2;
 // (ver `sembrarAdministrador`). La ficha de laboratorios y su inventario sí se
 // siembran siempre: son la estructura del centro, no una credencial.
 const SEED_DEMO = /^(1|true|si|sí|yes|on)$/i.test(String(process.env.LC_SEED_DEMO || "").trim());
+
+// Con LC_EXIGIR_ROTACION_DEMO=1 el arranque se aborta si alguna cuenta conserva
+// la contraseña publicada del repositorio. Es una barrera para producción: en
+// desarrollo (LC_SEED_DEMO=1) las credenciales demo son esperadas y no se
+// aborta, pero igualmente se avisa.
+const EXIGIR_ROTACION_DEMO = /^(1|true|si|sí|yes|on)$/i.test(String(process.env.LC_EXIGIR_ROTACION_DEMO || "").trim());
 
 // Cuenta de administrador para instalaciones sin semilla de ejemplo. La
 // contraseña es obligatoria para poder crear la cuenta: sin ella no se inventa
@@ -1068,10 +1164,13 @@ async function aplicarSemilla(conexion = db) {
   return resumen;
 }
 
-// Detecta cuentas de ejemplo que siguen con la contraseña publicada del
-// repositorio. Se avisa sin mostrar el hash: son credenciales conocidas, así que
-// en una instalación real hay que cambiarlas o desactivarlas.
-function avisarCuentasDeEjemplo(conexion = db) {
+// Devuelve las cuentas de ejemplo que siguen con la contraseña publicada del
+// repositorio. Se comparan hashes (nunca se muestran) porque son credenciales
+// conocidas: en una instalación real hay que cambiarlas o desactivarlas.
+// Se calcula en cada llamada para que /api/salud refleje el estado actual,
+// incluso después de restaurar un respaldo.
+export function cuentasDemoSinRotar(conexion = db) {
+  if (!conexion) return [];
   const pendientes = [];
   const ver = conexion.prepare("SELECT password FROM usuarios WHERE id = ?");
   for (const u of USUARIOS) {
@@ -1080,13 +1179,31 @@ function avisarCuentasDeEjemplo(conexion = db) {
     const hasheada = typeof u.password === "string" && /^\$2[aby]\$/.test(u.password);
     if (hasheada && fila.password === u.password) pendientes.push(u.id);
   }
-  if (pendientes.length) {
-    console.warn(
-      `  AVISO: ${pendientes.length} cuenta(s) de ejemplo conservan la contraseña ` +
-      `publicada del proyecto (${pendientes.join(", ")}). Cámbialas o desactívalas ` +
-      "antes de usar el sistema en producción."
+  return pendientes;
+}
+
+// Avisa (o aborta, con LC_EXIGIR_ROTACION_DEMO=1) si quedan credenciales demo
+// sin rotar. Se ejecuta siempre, también con LC_SEED_DEMO=1: en desarrollo el
+// aviso recuerda que esa base no debe usarse en producción.
+function avisarCuentasDeEjemplo() {
+  const pendientes = cuentasDemoSinRotar();
+  if (!pendientes.length) return pendientes;
+
+  if (EXIGIR_ROTACION_DEMO && !SEED_DEMO) {
+    throw new Error(
+      `LC_EXIGIR_ROTACION_DEMO está activo y ${pendientes.length} cuenta(s) de ` +
+      `ejemplo conservan la contraseña publicada del proyecto ` +
+      `(${pendientes.join(", ")}). Cámbialas o desactívalas antes de arrancar.`
     );
   }
+
+  console.warn(
+    `  AVISO: ${pendientes.length} cuenta(s) de ejemplo conservan la contraseña ` +
+    `publicada del proyecto (${pendientes.join(", ")}). ` +
+    (SEED_DEMO
+      ? "Es lo esperado con LC_SEED_DEMO=1; no uses esta base en producción."
+      : "Cámbialas o desactívalas antes de usar el sistema en producción.")
+  );
   return pendientes;
 }
 
@@ -1113,8 +1230,11 @@ if (!SEED_DEMO) {
       "entornos de desarrollo."
     );
   }
-  avisarCuentasDeEjemplo();
 }
+
+// La detección de credenciales demo se ejecuta siempre, no solo cuando la
+// semilla está desactivada: una base antigua puede conservar los hashes.
+avisarCuentasDeEjemplo();
 
 export { DB_PATH, DB_DIR, db, abrirConexion, MIGRACIONES, SEMILLA_VERSION, aplicarSemilla };
 
@@ -1232,10 +1352,7 @@ function validarCopia(ruta) {
   try {
     d = new DatabaseSync(ruta, { readOnly: true });
     d.exec("PRAGMA busy_timeout = 5000");
-    const integridad = d.prepare("PRAGMA quick_check").all();
-    if (!integridad.length || String(integridad[0].quick_check) !== "ok") {
-      throw new Error("el archivo está dañado o incompleto");
-    }
+    verificarIntegridadTotal(d, "el archivo está dañado o incompleto");
     const existentes = new Set(
       d.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name)
     );
@@ -1253,6 +1370,38 @@ function errorValidacion(mensaje) {
   const err = new Error(`El archivo recibido no es un respaldo utilizable: ${mensaje}.`);
   err.status = 400;
   return err;
+}
+
+// Crea una instantánea consistente de la base en un archivo temporal.
+//
+// `VACUUM INTO` copia la base dentro de una única transacción de lectura, así
+// que la copia no puede quedar a medias aunque coincida con una escritura. Se
+// verifica con PRAGMA integrity_check antes de entregarla. El llamador es
+// responsable de borrar el archivo cuando termine de servirlo; si el proceso
+// se interrumpe, `limpiarTemporales()` lo barre en el siguiente arranque.
+export function crearCopiaConsistente() {
+  if (!baseDisponible()) {
+    const err = new Error("La base de datos se está restaurando; inténtalo de nuevo en unos segundos");
+    err.status = 503;
+    throw err;
+  }
+
+  const destino = rutaTemporal(`respaldo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.db`);
+  try {
+    // La ruta se interpola en SQL: se escapan las comillas simples.
+    db.exec(`VACUUM INTO '${destino.replace(/'/g, "''")}'`);
+
+    const copia = new DatabaseSync(destino);
+    try {
+      verificarIntegridadTotal(copia, "La copia de seguridad no pasó la verificación de integridad");
+    } finally {
+      copia.close();
+    }
+    return destino;
+  } catch (err) {
+    try { fs.rmSync(destino, { force: true }); } catch { /* puede estar en uso */ }
+    throw err;
+  }
 }
 
 // Sustituye la base por la de un respaldo subido (buffer con el contenido del

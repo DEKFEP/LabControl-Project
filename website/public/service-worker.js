@@ -1,38 +1,40 @@
 /* service-worker.js — caché offline: red para la API, caché para estáticos. */
 
-const CACHE_NAME = "labcontrol-v4.8.5";
+const VERSION = "4.8.6";
+const CACHE_NAME = `labcontrol-v${VERSION}`;
 // Datos de inventario para poder consultarlos sin conexión. Solo se guardan
 // respuestas de lectura que NO son personales (laboratorios, equipos y su
 // inventario), de modo que en un equipo compartido nadie vea datos de la sesión
 // de otra persona. El resto de la API (usuarios, auditoría, agenda, reportes…)
-// nunca se cachea.
-const API_CACHE = "labcontrol-api-v4.2.0";
+// nunca se cachea. La caché se borra al iniciar sesión, al cerrarla y ante un
+// 401; por eso comparte la versión del shell (M-09, B-10).
+const API_CACHE = `labcontrol-api-v${VERSION}`;
 const API_OFFLINE = [
   /^api\/laboratorios(\/|$)/,
   /^api\/equipos(\/|$)/
 ];
 const PRECACHE_URLS = [
   "./",
-  "index.html",
-  "login.html",
-  "laboratorios.html",
-  "equipos.html",
-  "disponibilidad.html",
-  "usuarios.html",
-  "reportes.html",
-  "configuracion.html",
-  "css/style.css?v=4.8.5",
-  "js/theme.js?v=4.8.5",
-  "js/app.js?v=4.8.5",
-  "js/data.js?v=4.8.5",
-  "js/index.js?v=4.8.5",
-  "js/login.js?v=4.8.5",
-  "js/laboratorios.js?v=4.8.5",
-  "js/equipos.js?v=4.8.5",
-  "js/disponibilidad.js?v=4.8.5",
-  "js/reportes.js?v=4.8.5",
-  "js/usuarios.js?v=4.8.5",
-  "js/configuracion.js?v=4.8.5",
+  "index",
+  "login",
+  "laboratorios",
+  "equipos",
+  "disponibilidad",
+  "usuarios",
+  "reportes",
+  "configuracion",
+  "css/style.css?v=4.8.6",
+  "js/theme.js?v=4.8.6",
+  "js/app.js?v=4.8.6",
+  "js/data.js?v=4.8.6",
+  "js/index.js?v=4.8.6",
+  "js/login.js?v=4.8.6",
+  "js/laboratorios.js?v=4.8.6",
+  "js/equipos.js?v=4.8.6",
+  "js/disponibilidad.js?v=4.8.6",
+  "js/reportes.js?v=4.8.6",
+  "js/usuarios.js?v=4.8.6",
+  "js/configuracion.js?v=4.8.6",
   "js/app.js",
   "js/data.js",
   "js/index.js",
@@ -43,7 +45,7 @@ const PRECACHE_URLS = [
   "js/reportes.js",
   "js/usuarios.js",
   "js/configuracion.js",
-  "js/vendor/lucide.min.js?v=4.8.5",
+  "js/vendor/lucide.min.js?v=4.8.6",
   "manifest.webmanifest",
   "img/profile-default.svg",
   "img/labcontrol-icon.png",
@@ -117,9 +119,15 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
+          // Un 401 significa que la sesión cambió o caducó: lo guardado puede
+          // pertenecer a otro usuario/rol, así que se descarta (M-09).
+          if (response?.status === 401) {
+            event.waitUntil(caches.delete(API_CACHE));
+            return response;
+          }
           if (response && response.status === 200 && response.type === "basic") {
             const clone = response.clone();
-            caches.open(API_CACHE).then((c) => c.put(request, clone));
+            event.waitUntil(caches.open(API_CACHE).then((c) => c.put(request, clone)));
           }
           return response;
         })
@@ -147,7 +155,7 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((c) => c.put(request, clone));
           return response;
         })
-        .catch(() => caches.match(request).then((r) => r || caches.match("index.html")))
+        .catch(() => caches.match(request).then((r) => r || caches.match("index")))
     );
     return;
   }
@@ -172,7 +180,7 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
   const destino = new URL(
-    event.notification?.data?.url || "./index.html",
+    event.notification?.data?.url || "./index",
     self.location.href
   ).href;
 

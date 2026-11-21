@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import request from "supertest";
 
 let app, dir;
@@ -139,6 +140,42 @@ test("autenticación: login correcto devuelve token y sin password", async () =>
   expect(res.body.usuario.password).toBeUndefined();
 });
 
+test("autenticación: el correo no distingue mayúsculas ni espacios", async () => {
+  const mayusculas = await request(app)
+    .post("/api/login")
+    .send({ usuario: "ADMIN@LICEO.CL", password: "Insuco1336" });
+  expect(mayusculas.status).toBe(200);
+  expect(mayusculas.body.token).toBeTruthy();
+
+  const conEspacios = await request(app)
+    .post("/api/login")
+    .send({ usuario: "  Admin@Liceo.Cl  ", password: "Insuco1336" });
+  expect(conEspacios.status).toBe(200);
+  expect(conEspacios.body.token).toBeTruthy();
+});
+
+test("autenticación: tipos no-string devuelven 400 y no 500", async () => {
+  const cuerpos = [
+    { usuario: { $gt: "" }, password: "Insuco1336" },
+    { usuario: ["INSUCO"], password: "Insuco1336" },
+    { usuario: 123, password: "Insuco1336" },
+    { usuario: "INSUCO", password: { $ne: null } },
+    { usuario: "INSUCO", password: 1234567890 }
+  ];
+
+  for (const cuerpo of cuerpos) {
+    const res = await request(app).post("/api/login").send(cuerpo);
+    expect(res.status).toBe(400);
+  }
+});
+
+test("login 2FA: tipos no-string devuelven 400 y no 500", async () => {
+  const res = await request(app)
+    .post("/api/login/2fa")
+    .send({ loginId: { $ne: null }, codigo: 123456 });
+  expect(res.status).toBe(400);
+});
+
 test("salud: /api/salud responde sin token y no expone nada del sistema", async () => {
   const res = await request(app).get("/api/salud");
   expect(res.status).toBe(200);
@@ -148,7 +185,9 @@ test("salud: /api/salud responde sin token y no expone nada del sistema", async 
 
 test("salud: /api/salud revela el detalle solo con el token correcto", async () => {
   const conToken = await request(app).get("/api/salud").set("x-lc-salud-token", "salud-de-prueba");
-  expect(Object.keys(conToken.body).sort()).toEqual(["ok", "servicio", "version"]);
+  expect(Object.keys(conToken.body).sort()).toEqual(["cuentasDemoPendientes", "ok", "servicio", "version"]);
+  // La suite usa la semilla demo: debe detectar las credenciales sin rotar.
+  expect(conToken.body.cuentasDemoPendientes).toBeGreaterThan(0);
 
   const tokenMalo = await request(app).get("/api/salud").set("x-lc-salud-token", "incorrecto");
   expect(Object.keys(tokenMalo.body)).toEqual(["ok"]);
@@ -292,6 +331,104 @@ test("reportes: crea con cuerpo mínimo", async () => {
   expect([200, 201]).toContain(res.status);
 });
 
+test("reportes: los tipos calculados ignoran los datos enviados por el cliente", async () => {
+  const token = await login();
+
+  // Se envían cifras falsas a propósito: el servidor debe reemplazarlas por
+  // las de la agenda real del mes (agosto 2026 en la semilla).
+  const creado = await request(app)
+    .post("/api/reportes")
+    .set("Authorization", `Bearer ${token}`)
+    .send({
+      tipo: "uso",
+      titulo: "Uso real de agosto",
+      descripcion: "Reporte calculado desde la agenda",
+      fecha: "2026-08-25",
+      datos: { labels: ["Falso"], valores: [999] }
+    });
+  expect(creado.status).toBe(201);
+  expect(creado.body.datos.labels).not.toContain("Falso");
+  expect(creado.body.datos.labels).toContain("LAB COMP 1");
+  expect(creado.body.datos.valores.every(Number.isFinite)).toBe(true);
+
+  const posicion = creado.body.datos.labels.indexOf("LAB COMP 1");
+  // La semilla reserva ese laboratorio el 25 y el 26 de agosto: 4 horas.
+  expect(creado.body.datos.valores[posicion]).toBe(4);
+
+  // Editar tampoco permite reinyectar datos inventados.
+  const editado = await request(app)
+    .patch(`/api/reportes/${creado.body.id}`)
+    .set("Authorization", `Bearer ${token}`)
+    .send({ titulo: "Uso real (editado)", datos: { labels: ["Falso"], valores: [999] } });
+  expect(editado.status).toBe(200);
+  expect(editado.body.datos.labels).not.toContain("Falso");
+  expect(editado.body.datos.valores[posicion]).toBe(4);
+});
+
+test("reportes: el inventario se calcula con el total real de equipos", async () => {
+  const token = await login();
+  const total = await conBD((cone) => Number(cone.prepare("SELECT COUNT(*) AS n FROM equipos").get().n));
+
+  const creado = await request(app)
+    .post("/api/reportes")
+    .set("Authorization", `Bearer ${token}`)
+    .send({
+      tipo: "inventario",
+      titulo: "Inventario real",
+      descripcion: "Conteo desde la tabla de equipos",
+      datos: { total: 9999, activos: 9999, enFalla: 0, enMantencion: 0 }
+    });
+  expect(creado.status).toBe(201);
+  expect(creado.body.datos.total).toBe(total);
+  expect(creado.body.datos.total).not.toBe(9999);
+  expect(creado.body.datos.activos).toBeLessThanOrEqual(total);
+});
+
+test("reportes: los datos libres se limpian de claves de prototipo", async () => {
+  const token = await login();
+  // Se envía como texto para que "__proto__" sea una clave propia del JSON y no
+  // el prototipo del objeto literal de JavaScript.
+  const crudo = '{"tipo":"otro","titulo":"Datos libres","descripcion":"Prueba de saneamiento",' +
+    '"datos":{"__proto__":{"contaminado":true},"ok":2,"anidado":{"valor":"x"}}}';
+
+  const res = await request(app)
+    .post("/api/reportes")
+    .set("Authorization", `Bearer ${token}`)
+    .type("json")
+    .send(crudo);
+
+  expect(res.status).toBe(201);
+  expect(res.body.datos).toEqual({ ok: 2, anidado: { valor: "x" } });
+  expect(Object.prototype.contaminado).toBeUndefined();
+});
+
+test("reportes: un JSON corrupto en la base no rompe el detalle ni la edición", async () => {
+  const token = await login();
+  const id = `rep_corrupto_${Date.now()}`;
+  await conBD((cone) => {
+    cone.prepare(`
+      INSERT INTO reportes (id, tipo, titulo, descripcion, fecha, generado_por, datos, adjuntos)
+      VALUES (?,?,?,?,?,?,?,?)
+    `).run(id, "otro", "Reporte corrupto", "Datos inválidos", "2026-08-01", "INSUCO", "esto no es json", "{roto");
+  });
+
+  const detalle = await request(app)
+    .get(`/api/reportes/${id}`)
+    .set("Authorization", `Bearer ${token}`);
+  expect(detalle.status).toBe(200);
+  expect(detalle.body.datos).toEqual({});
+  expect(detalle.body.adjuntos).toEqual([]);
+
+  const editado = await request(app)
+    .patch(`/api/reportes/${id}`)
+    .set("Authorization", `Bearer ${token}`)
+    .send({ titulo: "Reporte reparable" });
+  expect(editado.status).toBe(200);
+  expect(editado.body.titulo).toBe("Reporte reparable");
+  expect(editado.body.datos).toEqual({});
+  expect(editado.body.adjuntos).toEqual([]);
+});
+
 test("usuarios: un usuario edita su nombre/apellido y recibe token renovado", async () => {
   const token = await loginCamila();
   const res = await request(app)
@@ -425,6 +562,48 @@ test("agenda: rechaza fecha pasada y solapamientos", async () => {
     .set("Authorization", `Bearer ${token}`)
     .send({ labId: 2, fecha, horaInicio: "15:00", horaFin: "16:00", motivo: "Horario libre" });
   expect(compat.status).toBe(201);
+});
+
+test("fechas: agenda rechaza un día que no existe", async () => {
+  const token = await login();
+  const res = await request(app)
+    .post("/api/agenda")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ labId: 1, fecha: "2099-02-31", horaInicio: "09:00", horaFin: "10:00", motivo: "Fecha imposible" });
+  expect(res.status).toBe(400);
+  expect(res.body.error).toBe("Datos inválidos");
+});
+
+test("fechas: reportes rechaza días imposibles y acepta el 29 de febrero bisiesto", async () => {
+  const token = await login();
+  const base = { tipo: "uso", titulo: "Prueba de fecha", descripcion: "Validación de calendario" };
+
+  const imposible = await request(app)
+    .post("/api/reportes")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ ...base, fecha: "2027-02-31" });
+  expect(imposible.status).toBe(400);
+
+  const noBisiesto = await request(app)
+    .post("/api/reportes")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ ...base, fecha: "2023-02-29" });
+  expect(noBisiesto.status).toBe(400);
+
+  const bisiesto = await request(app)
+    .post("/api/reportes")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ ...base, fecha: "2024-02-29" });
+  expect(bisiesto.status).toBe(201);
+  expect(bisiesto.body.fecha).toBe("2024-02-29");
+
+  // La edición aplica la misma regla.
+  const edicion = await request(app)
+    .patch(`/api/reportes/${bisiesto.body.id}`)
+    .set("Authorization", `Bearer ${token}`)
+    .send({ fecha: "2027-02-31" });
+  expect(edicion.status).toBe(400);
+  expect(edicion.body.error).toMatch(/AAAA-MM-DD/);
 });
 
 test("solicitudes: un no-admin crea una solicitud de especialidad y el admin recibe la notificación", async () => {
@@ -768,6 +947,7 @@ test("backups: solo admin, exporta una BD válida y restaura cambiando datos", a
   expect(exportado.headers["content-disposition"]).toContain("attachment");
   expect(exportado.headers["content-type"]).toBe("application/octet-stream");
   expect(Buffer.isBuffer(exportado.body)).toBe(true);
+  expect(Number(exportado.headers["content-length"])).toBe(exportado.body.length);
   expect(exportado.body.subarray(0, 16).toString("utf8")).toBe("SQLite format 3\u0000");
 
   // Restaurar basura: rechazado y la BD sigue operativa.
@@ -943,10 +1123,15 @@ test("recuperación: solicitud genérica, token de 30 min, nuevo login y refresh
 
   const cone = await abrirConexion();
   const fila = cone.prepare("SELECT token, expira_en FROM contrasena_resets WHERE usuario_id = 'prof_camila' ORDER BY rowid DESC LIMIT 1").get();
-  cone.close();
   expect(fila).toBeTruthy();
   expect(fila.expira_en).toBeGreaterThan(Date.now());
-  const token = fila.token;
+  // La base guarda el hash del token (B-02), no el token en claro: solo el correo
+  // lo recibe. Para la prueba se sustituye por el hash de un token conocido.
+  expect(fila.token).toMatch(/^[0-9a-f]{64}$/);
+  const token = "token_de_prueba_conocido_32_bytes_ok";
+  cone.prepare("UPDATE contrasena_resets SET token = ? WHERE token = ?")
+    .run(createHash("sha256").update(token).digest("hex"), fila.token);
+  cone.close();
 
   // Una sesión previa de prof_camila queda sin refresh válido tras restablecer.
   const previa = await sesionNuevaCamila();
@@ -1229,6 +1414,64 @@ test("configuración: el administrador sí recibe la configuración completa", a
   expect(res.body.red?.subredLabs).toBeTruthy();
   expect(res.body.seguridad?.sesionTimeout).toBeTruthy();
   expect(res.body.notificaciones?.emailAdmin).toBeTruthy();
+});
+
+test("sesión: /api/me devuelve la identidad verificada por cookie (B-08)", async () => {
+  const sinSesion = await request(app).get("/api/me");
+  expect(sinSesion.status).toBe(401);
+
+  const sesion = await sesionNueva();
+  const res = await request(app)
+    .get("/api/me")
+    .set("Authorization", `Bearer ${sesion.token}`);
+  expect(res.status).toBe(200);
+  expect(res.body.usuario.id).toBe("INSUCO");
+  expect(res.body.usuario.rol).toBe("admin");
+  // La API nunca devuelve el hash de la contraseña ni datos internos.
+  expect(res.body.usuario.password).toBeUndefined();
+  expect(res.body.usuario.passwordHash).toBeUndefined();
+});
+
+test("configuración: PATCH rechaza rangos, tipos y secciones desconocidas (M-08)", async () => {
+  const token = await login();
+  const invalidos = [
+    { laboratorios: { anticipacionMaxReserva: -1 } },
+    { laboratorios: { anticipacionMaxReserva: "7" } },
+    { seguridad: { sesionTimeout: 0 } },
+    { red: { wifiHabilitado: "si" } },
+    { notificaciones: { emailAdmin: "no-es-un-correo" } },
+    { seccionInventada: { clave: 1 } },
+    { laboratorios: { claveInventada: 1 } }
+  ];
+  for (const cuerpo of invalidos) {
+    const res = await request(app).patch("/api/config").set("Authorization", `Bearer ${token}`).send(cuerpo);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Configuración inválida");
+    expect(Array.isArray(res.body.details)).toBe(true);
+  }
+
+  const actual = await request(app).get("/api/config").set("Authorization", `Bearer ${token}`);
+  expect(actual.body.laboratorios.anticipacionMaxReserva).toBe(7);
+  expect(actual.body.seguridad.sesionTimeout).toBe(30);
+});
+
+test("configuración: PATCH válido no borra las claves no enviadas (M-08)", async () => {
+  const token = await login();
+  const antes = await request(app).get("/api/config").set("Authorization", `Bearer ${token}`);
+  const res = await request(app)
+    .patch("/api/config")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ laboratorios: { anticipacionMaxReserva: 9 } });
+  expect(res.status).toBe(200);
+  const despues = await request(app).get("/api/config").set("Authorization", `Bearer ${token}`);
+  expect(despues.body.laboratorios.anticipacionMaxReserva).toBe(9);
+  expect(despues.body.laboratorios.horaApertura).toBe(antes.body.laboratorios.horaApertura);
+  expect(despues.body.seguridad.sesionTimeout).toBe(antes.body.seguridad.sesionTimeout);
+
+  await request(app)
+    .patch("/api/config")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ laboratorios: { anticipacionMaxReserva: 7 } });
 });
 
 /* =====================================================================

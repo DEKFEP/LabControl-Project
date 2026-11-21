@@ -3,7 +3,7 @@ import { AUTH, ESTADOS, actualizarEstadoLaboratorio, cargarAgenda, cargarLaborat
 import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, renderLabGrid, renderSidebar, showToast } from "./app.js";
 
 
-  renderSidebar("laboratorios.html");
+  await renderSidebar("laboratorios");
   initTabs();
   const idSeleccionado = getQueryParam("id");
   let labsCache = [];
@@ -16,7 +16,7 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
       mostrarDetalle(Number(idSeleccionado));
     } else {
       document.getElementById("vista-listado").style.display = "block";
-      renderLabGrid(labs, "lab-grid", { linkTo: "laboratorios.html" });
+      renderLabGrid(labs, "lab-grid", { linkTo: "laboratorios" });
     }
   }).catch(() => showToast("No se pudieron cargar los datos.", "error"));
 
@@ -33,7 +33,7 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
       (!q || l.nombre.toLowerCase().includes(q) || l.sala.toLowerCase().includes(q)) &&
       (!estado || l.estado === estado)
     );
-    renderLabGrid(filtrados, "lab-grid", { linkTo: "laboratorios.html" });
+    renderLabGrid(filtrados, "lab-grid", { linkTo: "laboratorios" });
   }
 
   function mostrarDetalle(id) {
@@ -83,9 +83,11 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
       lockEl.style.display = "flex";
     }
 
-    // Servicios
+    // Servicios (un laboratorio puede no tener la lista en datos antiguos).
+    const servicios = Array.isArray(lab.servicios) ? lab.servicios : [];
     document.getElementById("detalle-servicios").innerHTML =
-      lab.servicios.map((s) => `<li><i data-lucide="check"></i>${esc(s)}</li>`).join("");
+      servicios.map((s) => `<li><i data-lucide="check"></i>${esc(s)}</li>`).join("") ||
+      "<li>Sin servicios registrados</li>";
 
     // Agenda del laboratorio
     cargarAgenda().then((agenda) => {
@@ -108,7 +110,7 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
     }).catch(() => {});
 
     // Enlace de equipos
-    document.getElementById("btn-ver-equipos").href = `equipos.html?lab=${lab.id}`;
+    document.getElementById("btn-ver-equipos").href = `equipos?lab=${lab.id}`;
   }
 
   // Modal estado

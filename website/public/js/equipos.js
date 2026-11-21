@@ -3,7 +3,7 @@ import { AUTH, ESTADOS_EQUIPO, cargarEquipos, cargarLaboratorios } from "./data.
 import { esc, getQueryParam, renderSidebar, showToast } from "./app.js";
 
 
-  renderSidebar("equipos.html");
+  await renderSidebar("equipos");
 
   const puedeTecnico = AUTH.puedeVerTecnico();
   const labFiltroInicial = getQueryParam("lab");

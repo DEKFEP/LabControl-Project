@@ -11,6 +11,7 @@ const archivos = [
   "website/backend/db.js",
   "website/backend/scripts/syntax-check.mjs",
   "website/backend/scripts/migraciones.js",
+  "website/backend/scripts/respaldo-externo.mjs",
   "website/public/js/theme.js",
   "website/public/js/configuracion.js",
   "website/public/js/data.js",

@@ -10,10 +10,10 @@ import {
 /* Navegación (según rol) */
 
 const NAV_ITEMS_ALL = [
-  { href: "index.html",          label: "Inicio",         icon: "layout-dashboard", roles: ["admin","programacion","otro_area"] },
-  { href: "disponibilidad.html", label: "Disponibilidad", icon: "clock",            roles: ["admin","programacion","otro_area"] },
-  { href: "equipos.html",        label: "Equipos",        icon: "monitor",          roles: ["admin","programacion","otro_area"] },
-  { href: "reportes.html",       label: "Reportes",       icon: "bar-chart-3",      roles: ["admin","programacion"] }
+  { href: "index",          label: "Inicio",         icon: "layout-dashboard", roles: ["admin","programacion","otro_area"] },
+  { href: "disponibilidad", label: "Disponibilidad", icon: "clock",            roles: ["admin","programacion","otro_area"] },
+  { href: "equipos",        label: "Equipos",        icon: "monitor",          roles: ["admin","programacion","otro_area"] },
+  { href: "reportes",       label: "Reportes",       icon: "bar-chart-3",      roles: ["admin","programacion"] }
 ];
 
 let __iconsObserver = null;
@@ -76,8 +76,8 @@ function pintarUsuario(sesion) {
         </div>
       </div>
       <div class="user-profile-card__actions">
-        <a class="user-profile-card__btn" href="configuracion.html"><i data-lucide="settings"></i> Configuración</a>
-        <a class="user-profile-card__btn" href="configuracion.html#ayuda"><i data-lucide="help-circle"></i> Ayuda y Soporte</a>
+        <a class="user-profile-card__btn" href="configuracion"><i data-lucide="settings"></i> Configuración</a>
+        <a class="user-profile-card__btn" href="configuracion#ayuda"><i data-lucide="help-circle"></i> Ayuda y Soporte</a>
         <button class="user-profile-card__btn user-profile-card__btn--danger" type="button" id="profile-logout"><i data-lucide="log-out"></i> Cerrar Sesión</button>
       </div>`;
     sidebar.appendChild(card);
@@ -87,18 +87,18 @@ function pintarUsuario(sesion) {
     const avatarBtn = userEl.querySelector(".user-avatar-btn");
     avatarBtn.addEventListener("click", () => {
       if (MQ_MOVIL.matches) {
-        window.location.href = "configuracion.html";
+        window.location.href = "configuracion";
         return;
       }
       const abrir = card.hidden;
       cerrarNotificaciones();
       card.hidden = !abrir;
       avatarBtn.setAttribute("aria-expanded", String(abrir));
-      if (abrir) card.querySelector("a").focus();
+      if (abrir) card.querySelector("a")?.focus();
     });
-    card.querySelector("#profile-logout").addEventListener("click", () => AUTH.logout());
-    card.querySelector(".profile-photo-label").addEventListener("click", () => card.querySelector("#profile-photo").click());
-    card.querySelector("#profile-photo").addEventListener("change", guardarFotoPerfil);
+    card.querySelector("#profile-logout")?.addEventListener("click", () => { void AUTH.logout(); });
+    card.querySelector(".profile-photo-label")?.addEventListener("click", () => card.querySelector("#profile-photo")?.click());
+    card.querySelector("#profile-photo")?.addEventListener("change", guardarFotoPerfil);
     document.addEventListener("click", e => {
       if (!card.hidden && !card.contains(e.target) && !userEl.contains(e.target)) cerrarPerfil();
     });
@@ -227,12 +227,14 @@ function cerrarNotificaciones() {
 }
 
 // Arma el sidebar; si la página exige login y no hay sesión, redirige.
-export function renderSidebar(activeHref, requireAuth = true) {
-  const sesion = AUTH.getSesion();
+// El rol se verifica contra la API (cookie HttpOnly) antes de pintar menús y
+// botones: el localStorage es solo una caché, no una autoridad (B-08).
+export async function renderSidebar(activeHref, requireAuth = true) {
+  const sesion = await AUTH.sesionVerificada();
 
   if (requireAuth && !sesion) {
-    window.location.href = "login.html";
-    return;
+    window.location.href = "login";
+    return null;
   }
 
   const rol = sesion?.rol ?? "otro_area";
@@ -441,13 +443,13 @@ async function mostrarNotificacionNativa(titulo, cuerpo, urlDestino = "") {
 
 function destinoNotificacion(n) {
   if ((n.tipo === "creado" || n.tipo === "editado") && n.reporteId) {
-    return `reportes.html?id=${encodeURIComponent(n.reporteId)}`;
+    return `reportes?id=${encodeURIComponent(n.reporteId)}`;
   }
   if (n.tipo === "usuario_registrado" && n.usuarioRef) {
-    return `usuarios.html?id=${encodeURIComponent(n.usuarioRef)}`;
+    return `usuarios?id=${encodeURIComponent(n.usuarioRef)}`;
   }
   if (["laboratorio", "reserva", "reserva_confirmada", "reserva_cancelada"].includes(n.tipo)) {
-    return "disponibilidad.html";
+    return "disponibilidad";
   }
   return "";
 }
@@ -506,7 +508,7 @@ async function revisarRecordatoriosReserva(sesion) {
       if (minutos > 0 && minutos <= 30) {
         vistas.push(idClave);
         const msj = `Tu reserva empieza a las ${r.horaInicio} (${minutos} min).`;
-        mostrarNotificacionNativa("Recordatorio de reserva", msj, "disponibilidad.html");
+        mostrarNotificacionNativa("Recordatorio de reserva", msj, "disponibilidad");
         showToast(msj, "success");
       }
     }
@@ -778,7 +780,7 @@ export function renderDonut(labs, containerId) {
 
 /* Cuadrícula de laboratorios */
 
-export function renderLabGrid(labs, containerId, { linkTo = "laboratorios.html" } = {}) {
+export function renderLabGrid(labs, containerId, { linkTo = "laboratorios" } = {}) {
   const el = document.getElementById(containerId);
   if (!el) return;
   el.innerHTML = labs.map((lab) => {
@@ -814,9 +816,19 @@ export function getQueryParam(name) {
 // con otra forma se interpolaba tal cual en `innerHTML` (por ejemplo en
 // reportes.js), lo que abría XSS almacenado a través de una fecha manipulada.
 export function formatFecha(fechaStr) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(fechaStr ?? ""));
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(fechaStr ?? ""));
   if (!m) return "—";
-  return `${m[3]}/${m[2]}/${m[1]}`;
+  const [anio, mes, dia] = m.slice(1).map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  if (fecha.getUTCFullYear() !== anio || fecha.getUTCMonth() + 1 !== mes || fecha.getUTCDate() !== dia) {
+    return "—";
+  }
+  return `${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${anio}`;
+}
+
+// Muestra u oculta un elemento sin lanzar si el selector no existe (B-01).
+export function setDisplay(selector, display) {
+  document.querySelector(selector)?.style.setProperty("display", display);
 }
 
 // Fecha en zona horaria LOCAL (AAAA-MM-DD). `toISOString()` devuelve UTC: en Chile
