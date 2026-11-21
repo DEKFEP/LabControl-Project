@@ -1651,7 +1651,7 @@ async function enviarCorreoReseteo(email, enlace) {
       html: `
         <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto">
           <h2>Restablece tu contraseña</h2>
-          <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en Insuco LabControl.</p>
+          <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en LabControl.</p>
           <p><a href="${enlace}">Restablecer mi contraseña</a></p>
           <p style="font-size:13px;color:#555">El enlace expira en 30 minutos. Si no solicitaste este cambio, ignora este correo.</p>
         </div>`

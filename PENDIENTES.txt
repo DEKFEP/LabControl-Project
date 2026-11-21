@@ -82,7 +82,7 @@ Probar una restauración en staging
   2. Definir LC_SALUD_TOKEN en Railway y como secreto del repositorio
      (gh secret set LC_SALUD_TOKEN).
   3. Definir LC_PUBLIC_URL con la URL pública https del sitio
-     (https://insuco-labcontrol.pages.dev o el dominio propio), no la URL de
+     (https://labcontrol-ym.pages.dev o el dominio propio), no la URL de
      Railway: se usa para las cookies Secure, el CORS y los enlaces de correo.
   4. Definir API_ORIGIN en Pages apuntando a la API de Railway.
   5. Rotar la contraseña del administrador INSUCO, revocar sus refresh tokens y

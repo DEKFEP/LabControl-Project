@@ -1,11 +1,11 @@
-# Insuco LabControl
+# LabControl
 
 Sistema web para el control y la supervisión de los laboratorios de computación del Liceo
 INSUCO. Permite consultar y administrar la disponibilidad, el inventario de equipos, el mapa
 del establecimiento, las reservas de uso, los reportes y las cuentas de los profesores, con
 autenticación por roles y base de datos real en el backend.
 
-**Sitio publicado:** <https://insuco-labcontrol.pages.dev>
+**Sitio publicado:** <https://labcontrol-ym.pages.dev>
 
 Proyecto de la asignatura *Diseño y Aplicaciones Web*. Lo que cambió en cada versión está en las
 [releases](https://github.com/DereckYQL/LabControl-Project/releases); este README describe el

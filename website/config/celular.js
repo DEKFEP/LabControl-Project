@@ -406,7 +406,7 @@ function puertoAbierto(puerto) {
 
 async function principal() {
   console.log("======================================================");
-  console.log("  Insuco LabControl \u2014 abrir la web desde el celular");
+  console.log("  LabControl \u2014 abrir la web desde el celular");
   console.log("======================================================\n");
 
   if (!(await puertoAbierto(PUERTO))) {

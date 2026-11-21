@@ -1,4 +1,5 @@
-/* service-worker.js — caché offline: red para la API, caché para estáticos. */
+/* service-worker.js — caché offline: red para la API, caché para estáticos.
+   Actualizado al renombrar la web a LabControl y cambiar su host público. */
 
 const VERSION = "4.9.0";
 const CACHE_NAME = `labcontrol-v${VERSION}`;

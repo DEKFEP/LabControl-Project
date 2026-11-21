@@ -113,7 +113,7 @@
   for (const r of REPORTES) r.adjuntos = [];
 
   const CONFIG = {
-    sitio: { nombreInstitucion: "Instituto Superior de Comercio", nombreSistema: "Insuco LabControl", logo: "", tema: "claro", idioma: "es" },
+    sitio: { nombreInstitucion: "Instituto Superior de Comercio", nombreSistema: "LabControl", logo: "", tema: "claro", idioma: "es" },
     red: { subredLabs: "192.168.10.0/24", servidorDNS: "192.168.1.1", puertaEnlace: "192.168.1.254", wifiHabilitado: true },
     notificaciones: { emailAdmin: "admin@liceo.cl", alertaFallas: true, alertaDisponibilidad: true, alertaReservas: true, alertaReportes: true, alertaSolicitudes: true, alertaNuevosUsuarios: true, recordatorioReserva: false },
     seguridad: { sesionTimeout: 30, intentosLoginMax: 5, registroActividad: true },
