@@ -3,7 +3,7 @@ import { AUTH, errorPassword } from "./data.js";
 
 // Si ya hay sesión activa, redirigir al inicio
 if (AUTH.getSesion()) {
-  window.location.href = "index.html";
+  window.location.href = "index";
 }
 
 // Las credenciales (incluidas las de demostración) NO se publican en el
@@ -69,7 +69,7 @@ $("login-form").addEventListener("submit", async (e) => {
       btn.textContent = "Verificando…";
       try {
         await AUTH.verificar2fa(desafio2FA.loginId, inputCodigo.value);
-        window.location.href = "index.html";
+        window.location.href = "index";
       } catch (err) {
         errorDos.textContent = (err && err.message) ? err.message : "Código incorrecto o sesión expirada. Intenta de nuevo.";
         errorDos.style.display = "block";
@@ -84,7 +84,7 @@ $("login-form").addEventListener("submit", async (e) => {
           desafio2FA = result;
           mostrarPaso(true);
         } else {
-          window.location.href = "index.html";
+          window.location.href = "index";
         }
       } catch (err) {
         // El motivo real del servidor (credenciales incorrectas, cuenta
@@ -240,7 +240,7 @@ restablecerForm.addEventListener("submit", async (e) => {
   btn.textContent = "Restableciendo…";
   try {
     await AUTH.restablecerContrasena(tokenRestablecer, pass);
-    window.location.href = "login.html";
+    window.location.href = "login";
   } catch (err) {
     mostrarBox(restablecerError, (err && err.message) ? err.message : "El enlace es inválido o expiró.");
   } finally {

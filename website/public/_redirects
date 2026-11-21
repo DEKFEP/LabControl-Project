@@ -1,18 +1,16 @@
-# Sin este archivo, Cloudflare Pages responde 308 a cada peticion .html y la
-# redirige a la ruta sin extension (/login.html -> /login). El sitio usa
-# direcciones con .html en los enlaces, en el service worker y en los enlaces de
-# los correos, asi que cada navegacion pagaba un salto extra y el service-worker
-# precargaba rutas distintas de las que el navegador pedia.
-# Estas reglas sirven el archivo con 200, sin redireccion: la direccion que ve el
-# usuario y la que guardan los enlaces siguen siendo .html. No se pueden usar
-# reglas 301/308 porque Pages no tiene forma de desactivar el recorte de la
-# extension .html desde el repositorio, y cada peticion .html terminaba
-# redirigida a la misma pagina.
-/index.html              /                    200
-/login.html              /login               200
-/laboratorios.html      /laboratorios        200
-/disponibilidad.html    /disponibilidad      200
-/equipos.html            /equipos             200
-/reportes.html           /reportes            200
-/usuarios.html           /usuarios            200
-/configuracion.html     /configuracion       200
+# URLs publicas limpias: la web enlaza a /login, /equipos, ... y la raiz es /
+# (que sirve index.html). Los archivos siguen llamandose <pagina>.html en
+# disco porque Pages los necesita para servir la ruta sin extension.
+#
+# Las reglas siguientes son solo para enlaces historicos o marcadores que
+# todavia pidan .html: redirigen 308 a la ruta limpia para que la extension
+# nunca aparezca en la barra del navegador. No son 200: un 200 dejaria la URL
+# con .html visible y ademas duplicaria cada pagina para buscadores y cache.
+/index.html              /                    308
+/login.html              /login               308
+/laboratorios.html       /laboratorios        308
+/disponibilidad.html     /disponibilidad      308
+/equipos.html            /equipos             308
+/reportes.html           /reportes            308
+/usuarios.html           /usuarios            308
+/configuracion.html      /configuracion       308

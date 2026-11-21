@@ -3,7 +3,7 @@ import { cargarLaboratorios } from "./data.js";
 import { esc, renderLabGrid, renderSidebar, renderStatCards, showToast } from "./app.js";
 
 
-  const sesion = renderSidebar("index.html");
+  const sesion = await renderSidebar("index");
 
   if (sesion) {
     const hora = new Date().getHours();
@@ -17,7 +17,7 @@ import { esc, renderLabGrid, renderSidebar, renderStatCards, showToast } from ".
   cargarLaboratorios().then((labs) => {
     labsCache = labs;
     renderStatCards(labs, "stat-cards");
-    renderLabGrid(labs, "labs-home", { linkTo: "laboratorios.html" });
+    renderLabGrid(labs, "labs-home", { linkTo: "laboratorios" });
   }).catch(() => showToast("No se pudieron cargar los laboratorios.", "error"));
 
   // Lightbox de imágenes de laboratorios

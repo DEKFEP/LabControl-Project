@@ -15,7 +15,7 @@ export default defineConfig({
   },
   webServer: {
     command: "node ../backend/server.js",
-    url: "http://localhost:3100/login.html",
+    url: "http://localhost:3100/login",
     reuseExistingServer: !process.env.CI,
     env: {
       PORT: "3100",

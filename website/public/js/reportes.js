@@ -1,9 +1,9 @@
 /* Imports (ES modules) */
 import { AUTH, actualizarReporte, cargarReporte, cargarReportes, cargarUsuarios, crearReporte, eliminarReporte } from "./data.js";
-import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam, refrescarNotificaciones, renderSidebar, showToast } from "./app.js";
+import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam, refrescarNotificaciones, renderSidebar, setDisplay, showToast } from "./app.js";
 
 
-  renderSidebar("reportes.html");
+  await renderSidebar("reportes");
 
   const ICONOS_TIPO  = { uso: "bar-chart-3", fallas: "triangle-alert", disponibilidad: "clock", inventario: "package", otro: "file-text" };
   const COLORES_TIPO = { uso: "primary", fallas: "danger", disponibilidad: "success", inventario: "warning", otro: "neutral" };
@@ -101,7 +101,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
 
     document.getElementById("rep-grid").style.display       = "none";
     document.getElementById("vista-reporte").style.display  = "block";
-    document.querySelector(".page-header").style.display    = "none";
+    setDisplay(".page-header", "none");
 
     document.getElementById("rep-titulo").textContent = rep.titulo;
     document.getElementById("rep-descripcion").textContent = rep.descripcion || "";
@@ -133,7 +133,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     contenidoEl.innerHTML = buildReporteHTML(rep);
     contenidoEl.style.display = contenidoEl.innerHTML.trim() ? "" : "none";
 
-    if (rep.datos?.labels && rep.datos?.valores) {
+    if (Array.isArray(rep.datos?.labels) && Array.isArray(rep.datos?.valores) && rep.datos.labels.length) {
       setTimeout(() => drawBarChart(rep.datos.labels, rep.datos.valores, "canvas-chart"), 50);
     }
   }
@@ -243,7 +243,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
       repAbiertoId = null;
       document.getElementById("vista-reporte").style.display = "none";
       document.getElementById("rep-grid").style.display      = "grid";
-      document.querySelector(".page-header").style.display   = "flex";
+      setDisplay(".page-header", "flex");
       await recargarReportes();
       refrescarNotificaciones();
       showToast("Reporte eliminado.");
@@ -261,7 +261,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     repAbierto   = null;
     document.getElementById("vista-reporte").style.display = "none";
     document.getElementById("rep-grid").style.display      = "grid";
-    document.querySelector(".page-header").style.display   = "flex";
+    setDisplay(".page-header", "flex");
   });
 
   /* ======================================================
@@ -397,7 +397,8 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
           descripcion,
           fecha: fechaLocalISO(),
           generadoPor: sesion?.id ?? "desconocido",
-          datos: generarDatosMock(tipo),
+          // El contenido de los reportes calculados lo genera el backend a
+          // partir de las tablas reales; el cliente no envía cifras.
           adjuntos: archivosTemporales
         });
         showToast("Reporte generado correctamente.");
@@ -427,25 +428,17 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
      CONTENIDO DEL REPORTE (gráficos y tablas)
      ====================================================== */
 
-  function generarDatosMock(tipo) {
-    // Tipo "Otro": reporte libre, sin datos automáticos
-    if (tipo === "otro") return {};
-    if (tipo === "uso" || tipo === "disponibilidad") {
-      return {
-        labels:  ["Lab 1","Lab 2","Lab 3","Lab 4","Lab 5"],
-        valores: [70,65,50,15,85].map((v) => v + Math.floor(Math.random() * 15))
-      };
-    }
-    if (tipo === "fallas") {
-      return { fallas: [{ equipo:"PC-nuevo", lab:"Lab 1", descripcion:"Falla simulada", estado:"pendiente" }] };
-    }
-    return { total:138, activos:134, enFalla:3, enMantencion:1 };
-  }
-
   function buildReporteHTML(rep) {
     // Reporte libre ("Otro"): sin gráficos ni tablas generadas por el sistema
     if (rep.tipo === "otro") return "";
+    const datos = rep.datos && typeof rep.datos === "object" ? rep.datos : {};
+
     if (rep.tipo === "uso" || rep.tipo === "disponibilidad") {
+      const labels = Array.isArray(datos.labels) ? datos.labels : [];
+      const valores = Array.isArray(datos.valores) ? datos.valores : [];
+      if (!labels.length) {
+        return `<p style="color:var(--color-text-muted)">Este reporte no tiene datos registrados para el período seleccionado.</p>`;
+      }
       return `
         <h3 style="margin:0 0 16px;font-size:.95rem">${rep.tipo === "uso" ? "Horas de uso por laboratorio" : "Porcentaje de disponibilidad por laboratorio"}</h3>
         <canvas id="canvas-chart" width="600" height="220" style="max-width:100%"></canvas>
@@ -453,52 +446,64 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
           <table>
             <thead><tr><th>Laboratorio</th><th>${rep.tipo === "uso" ? "Horas de uso" : "Disponibilidad (%)"}</th></tr></thead>
             <tbody>
-              ${rep.datos.labels.map((l, i) => `<tr><td>${esc(l)}</td><td><strong>${esc(rep.datos.valores[i])}${rep.tipo === "disponibilidad" ? "%" : " h"}</strong></td></tr>`).join("")}
+              ${labels.map((l, i) => `<tr><td>${esc(l)}</td><td><strong>${esc(valores[i] ?? "—")}${rep.tipo === "disponibilidad" ? "%" : " h"}</strong></td></tr>`).join("")}
             </tbody>
           </table>
         </div>
       `;
     }
+
     if (rep.tipo === "fallas") {
+      const fallas = Array.isArray(datos.fallas) ? datos.fallas : [];
+      if (!fallas.length) {
+        return `<p style="color:var(--color-text-muted)">No hay fallas registradas.</p>`;
+      }
       return `
         <h3 style="margin:0 0 16px;font-size:.95rem">Registro de fallas</h3>
         <table>
           <thead><tr><th>Equipo</th><th>Laboratorio</th><th>Descripción</th><th>Estado</th></tr></thead>
           <tbody>
-            ${rep.datos.fallas.map((f) => `
-              <tr>
-                <td><strong>${esc(f.equipo)}</strong></td>
-                <td>${esc(f.lab)}</td>
-                <td>${esc(f.descripcion)}</td>
-                <td><span class="badge ${f.estado === "resuelto" ? "badge--disponible" : f.estado === "en reparación" ? "badge--mantencion" : "badge--ocupado"}">${esc(f.estado)}</span></td>
-              </tr>
-            `).join("")}
+            ${fallas.map((f) => {
+              const fila = f && typeof f === "object" ? f : {};
+              return `
+                <tr>
+                  <td><strong>${esc(fila.equipo ?? "—")}</strong></td>
+                  <td>${esc(fila.lab ?? "—")}</td>
+                  <td>${esc(fila.descripcion ?? "—")}</td>
+                  <td><span class="badge ${fila.estado === "resuelto" ? "badge--disponible" : fila.estado === "en reparación" || fila.estado === "en mantención" ? "badge--mantencion" : "badge--ocupado"}">${esc(fila.estado ?? "—")}</span></td>
+                </tr>
+              `;
+            }).join("")}
           </tbody>
         </table>
       `;
     }
+
     if (rep.tipo === "inventario") {
-      const d = rep.datos;
+      const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       return `
         <h3 style="margin:0 0 16px;font-size:.95rem">Resumen de inventario</h3>
         <div class="stat-grid">
-          <div class="card stat-card"><div><div class="stat-card__label">Total equipos</div><div class="stat-card__value">${esc(d.total)}</div></div><div class="stat-card__icon stat-card__icon--primary"><i data-lucide="monitor"></i></div></div>
-          <div class="card stat-card"><div><div class="stat-card__label">Activos</div><div class="stat-card__value">${esc(d.activos)}</div></div><div class="stat-card__icon stat-card__icon--success"><i data-lucide="circle-check"></i></div></div>
-          <div class="card stat-card"><div><div class="stat-card__label">Con falla</div><div class="stat-card__value">${esc(d.enFalla)}</div></div><div class="stat-card__icon stat-card__icon--danger"><i data-lucide="triangle-alert"></i></div></div>
-          <div class="card stat-card"><div><div class="stat-card__label">En mantención</div><div class="stat-card__value">${esc(d.enMantencion)}</div></div><div class="stat-card__icon stat-card__icon--warning"><i data-lucide="wrench"></i></div></div>
+          <div class="card stat-card"><div><div class="stat-card__label">Total equipos</div><div class="stat-card__value">${esc(num(datos.total))}</div></div><div class="stat-card__icon stat-card__icon--primary"><i data-lucide="monitor"></i></div></div>
+          <div class="card stat-card"><div><div class="stat-card__label">Activos</div><div class="stat-card__value">${esc(num(datos.activos))}</div></div><div class="stat-card__icon stat-card__icon--success"><i data-lucide="circle-check"></i></div></div>
+          <div class="card stat-card"><div><div class="stat-card__label">Con falla</div><div class="stat-card__value">${esc(num(datos.enFalla))}</div></div><div class="stat-card__icon stat-card__icon--danger"><i data-lucide="triangle-alert"></i></div></div>
+          <div class="card stat-card"><div><div class="stat-card__label">En mantención</div><div class="stat-card__value">${esc(num(datos.enMantencion))}</div></div><div class="stat-card__icon stat-card__icon--warning"><i data-lucide="wrench"></i></div></div>
         </div>
       `;
     }
+
     return `<p style="color:var(--color-text-muted)">Sin datos para mostrar.</p>`;
   }
 
   function drawBarChart(labels, valores, canvasId) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
+    if (!canvas || !labels.length) return;
     const ctx    = canvas.getContext("2d");
     const W      = canvas.width;
     const H      = canvas.height;
-    const maxVal = Math.max(...valores) || 1;
+    // Blindaje ante datos incompletos: cada barra usa un número finito o 0.
+    const seguros = labels.map((_, i) => (Number.isFinite(Number(valores[i])) ? Number(valores[i]) : 0));
+    const maxVal = Math.max(...seguros, 1);
     const pad    = 40;
     const barW   = (W - pad * 2) / labels.length - 10;
     const colores= ["#2f6fed","#16a34a","#ef4444","#f59e0b","#8b5cf6"];
@@ -513,7 +518,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
 
     labels.forEach((label, i) => {
       const x   = pad + i * ((W - pad * 2) / labels.length) + 5;
-      const pct = valores[i] / maxVal;
+      const pct = seguros[i] / maxVal;
       const bH  = pct * (H - 60);
       const y   = H - bH - 30;
 
@@ -525,7 +530,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
       ctx.fillStyle = cValor;
       ctx.font = "bold 11px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(valores[i], x + barW / 2, y - 6);
+      ctx.fillText(seguros[i], x + barW / 2, y - 6);
 
       ctx.fillStyle = cEje;
       ctx.font = "10px sans-serif";

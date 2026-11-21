@@ -1,9 +1,9 @@
 /* Imports (ES modules) */
-import { AUTH, actualizarUsuario, cargarUsuarios, crearUsuario, eliminarUsuario, errorPassword } from "./data.js";
-import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, nivelLabel, renderSidebar, rolLabel, showToast } from "./app.js";
+import { AUTH, actualizarUsuario, cargarAuditoria, cargarUsuarios, crearUsuario, eliminarUsuario, errorPassword } from "./data.js";
+import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam, initTabs, nivelLabel, renderSidebar, rolLabel, setDisplay, showToast } from "./app.js";
 
 
-  renderSidebar("usuarios.html");
+  await renderSidebar("usuarios");
   initTabs();
 
   const esAdmin = AUTH.esAdmin();
@@ -12,14 +12,12 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
     document.getElementById("btn-nuevo-usuario").style.display = "none";
   }
 
-  // Restricciones de visibilidad entre roles:
-  // - "otro_area": no ve Permisos ni Actividad de profes de Programación ni del Admin.
-  // - "programacion": no ve Actividad del Admin.
-  // - El admin ve todo.
+  // Restricciones de visibilidad entre roles. La pestaña Actividad muestra
+  // datos reales de /api/auditoria, que solo el administrador puede consultar.
   function puedeVerSeccion(rolUsuario, seccion) {
+    if (seccion === "actividad") return miRol === "admin";
     if (miRol === "admin") return true;
-    if (miRol === "programacion")
-      return rolUsuario === "admin" ? seccion !== "actividad" : true;
+    if (miRol === "programacion") return rolUsuario !== "admin";
     return !(rolUsuario === "admin" || rolUsuario === "programacion");
   }
 
@@ -40,10 +38,10 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
   }).catch(() => showToast("No se pudieron cargar los usuarios.", "error"));
 
   function volverAlListado() {
-    document.getElementById("vista-usr-detalle").style.display = "none";
-    document.getElementById("usr-grid").style.display          = "grid";
-    document.getElementById("usr-stats").style.display         = "grid";
-    document.querySelector(".page-header").style.display       = "flex";
+    setDisplay("#vista-usr-detalle", "none");
+    setDisplay("#usr-grid", "grid");
+    setDisplay("#usr-stats", "grid");
+    setDisplay(".page-header", "flex");
     detalleActualId = null;
   }
 
@@ -127,12 +125,10 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
     if (!u) return;
     detalleActualId = id;
 
-    document.getElementById("usr-grid").style.display        = "none";
-    document.getElementById("usr-stats").style.display       = "none";
-    document.querySelector(".page-header").style.display     = "none";
-    document.querySelector(".stat-grid")?.style &&
-      (document.querySelector("#usr-stats").style.display = "none");
-    document.getElementById("vista-usr-detalle").style.display = "block";
+    setDisplay("#usr-grid", "none");
+    setDisplay("#usr-stats", "none");
+    setDisplay(".page-header", "none");
+    setDisplay("#vista-usr-detalle", "block");
 
     const color = ROL_COLOR[u.rol] ?? "primary";
     const avatarEl = document.getElementById("det-avatar");
@@ -209,20 +205,45 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
       </div>
     `;
 
-    // Actividad reciente (mock)
-    document.getElementById("det-actividad-list").innerHTML = `
-      <div class="actividad-lista">
-        ${mockActividad(u).map((a) => `
-          <div class="actividad-item">
-            <span class="actividad-item__icono"><i data-lucide="${a.icono}"></i></span>
-            <div>
-              <div class="actividad-item__texto">${a.texto}</div>
-              <div class="actividad-item__fecha">${a.fecha}</div>
-            </div>
-          </div>
-        `).join("")}
-      </div>
-    `;
+    // Actividad reciente: datos reales de la auditoría (M-06).
+    renderActividadReal(u);
+  }
+
+  const ACCIONES_AUDITORIA = {
+    login_ok: { icono: "log-in", texto: "Inicio de sesión" },
+    login_fallido: { icono: "shield-alert", texto: "Intento de acceso fallido" },
+    logout: { icono: "log-out", texto: "Cierre de sesión" },
+    reserva_creada: { icono: "calendar-days", texto: "Reserva creada" },
+    reporte_creado: { icono: "bar-chart-3", texto: "Reporte creado" },
+    cambio_estado_lab: { icono: "monitor", texto: "Cambio de estado de laboratorio" }
+  };
+
+  async function renderActividadReal(u) {
+    const lista = document.getElementById("det-actividad-list");
+    if (!lista) return;
+    if (!esAdmin) {
+      lista.innerHTML = "<p>Solo el administrador puede consultar la actividad registrada.</p>";
+      return;
+    }
+    try {
+      const datos = await cargarAuditoria({ usuario: u.id, limite: 20 });
+      const eventos = Array.isArray(datos) ? datos : datos?.data ?? [];
+      lista.innerHTML = eventos.length
+        ? `<div class="actividad-lista">${eventos.map((a) => {
+            const accion = ACCIONES_AUDITORIA[a.accion] ?? { icono: "history", texto: a.accion };
+            return `
+              <div class="actividad-item">
+                <span class="actividad-item__icono"><i data-lucide="${esc(accion.icono)}"></i></span>
+                <div>
+                  <div class="actividad-item__texto">${esc(accion.texto)}</div>
+                  <div class="actividad-item__fecha">${esc(formatFecha(a.fecha))}</div>
+                </div>
+              </div>`;
+          }).join("")}</div>`
+        : "<p>Sin actividad registrada.</p>";
+    } catch {
+      lista.innerHTML = "<p>No se pudo cargar la actividad registrada.</p>";
+    }
   }
 
   function getPermisosPorRol(rol, nivel) {
@@ -240,19 +261,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, getQueryParam, initTabs, ni
       { nombre:"Gestionar usuarios",            desc:"Crear, editar y desactivar usuarios",           ok: esAdm },
       { nombre:"Configuración del sistema",     desc:"Ajustes avanzados de red, seguridad y sitio",   ok: esAdm },
     ];
-  }
-
-  function mockActividad(u) {
-    const base = [
-      { icono:"log-in",        texto:"Inicio de sesión exitoso",               fecha:"22/08/2026 08:12" },
-      { icono:"clock",         texto:"Consultó disponibilidad del Lab 2",       fecha:"21/08/2026 14:35" },
-      { icono:"calendar-days", texto:"Agendó reserva en Laboratorio 1",         fecha:"20/08/2026 10:00" },
-    ];
-    if (u.rol === "programacion" || u.rol === "admin") {
-      base.push({ icono:"monitor",     texto:"Ejecutó control remoto — PC-101",   fecha:"19/08/2026 09:45" });
-      base.push({ icono:"bar-chart-3", texto:"Generó reporte de disponibilidad",   fecha:"18/08/2026 16:20" });
-    }
-    return base;
   }
 
   document.getElementById("btn-volver-usr").addEventListener("click", volverAlListado);

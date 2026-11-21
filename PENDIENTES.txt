@@ -1,161 +1,133 @@
 LabControl — PENDIENTES Y LIMITACIONES CONOCIDAS
 ================================================
 
-Documento de trabajo interno. Describe lo que falta por implementar, lo que quedó a medias
-y las limitaciones del despliegue actual. No es documentación de uso: eso está en README.md.
+Documento de trabajo interno. Solo contiene lo que falta por hacer o sigue limitando
+el despliegue actual. Los hallazgos del informe y su prioridad están en
+INFORME-AUDITORIA-4.8.txt (sección 8). La documentación de uso está en README.md.
 
 
-1. CORREO DE RECUPERACIÓN DE CONTRASEÑA (RESEND)
--------------------------------------------------
-Estado: el flujo está construido y probado, falta conectarlo al proveedor de correo.
+1. INTEGRACIONES EXTERNAS PENDIENTES
+------------------------------------
+Correo de recuperación (Resend)
+  El flujo está construido y probado, pero sin proveedor no se envía ningún correo.
+  El enlace ya no se imprime en los logs (M-07): en producción RESEND_API_KEY es
+  obligatoria y el token solo se guarda hasheado en la base (B-02).
+  Falta:
+    1. Crear la cuenta en resend.com y verificar un dominio propio (o usar
+       onboarding@resend.dev, que solo entrega a la casilla indicada).
+    2. Definir RESEND_API_KEY y RESEND_FROM en el servicio del backend.
+    3. Configurar SPF y DKIM si se usa el dominio del establecimiento.
+    4. Probar solicitud, recepción, enlace y cambio de contraseña.
 
-Qué ya funciona en el backend:
-  - La respuesta es siempre la misma, sin revelar si el correo existe.
-  - Genera un token de 30 minutos y lo guarda en la tabla contrasena_resets.
-  - Revoca las sesiones abiertas de esa cuenta y deja el evento en la auditoría.
-  - Limita las solicitudes para que no se use como forma de envío masivo.
+Inicio de sesión con Google
+  El botón existe, pero no autentica: falta el cliente OAuth y las rutas.
+  Falta:
+    1. Crear el cliente OAuth en Google Cloud Console y definir GOOGLE_CLIENT_ID
+       y GOOGLE_CLIENT_SECRET.
+    2. Instalar la librería OAuth en website/backend.
+    3. Implementar GET /api/auth/google y GET /api/auth/google/callback.
+    4. Decidir qué correos se admiten y qué rol heredan; conectar el botón.
+    5. Mantener el segundo factor en el inicio de sesión del administrador.
 
-Qué falta:
-  1. Crear la cuenta en Resend (resend.com) y verificar un dominio propio.
-     También sirve el dominio de prueba onboarding@resend.dev, que solo entrega a la
-     casilla que se indique.
-  2. Generar la clave de API y definir RESEND_API_KEY en el servicio del backend.
-  3. Definir RESEND_FROM con la casilla remitente real (por defecto usa
-     LabControl <onboarding@resend.dev>).
-  4. Probar el flujo completo: solicitud, recepción del correo, uso del enlace y cambio
-     de contraseña.
-
-Mientras no haya clave, el enlace se imprime en la consola del servidor, que sirve para
-desarrollar pero no para producción: nadie recibiría el correo.
-
-Pendiente de decidir: si el dominio propio del establecimiento se usará como remitente, hay
-que configurar los registros DNS de entrega (SPF, DKIM) que indique Resend.
-
-
-2. INICIO DE SESIÓN CON GOOGLE
------------------------------
-Estado: el botón existe en la interfaz y explica que la función no está conectada. No
-autentica a nadie.
-
-Qué falta:
-  1. Crear un proyecto en Google Cloud Console y un cliente OAuth de tipo "Web
-     application", con la URI de redirección apuntando al callback del backend
-     (por ejemplo http://localhost:3000/api/auth/google/callback en desarrollo).
-  2. Definir GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET en el backend.
-  3. Instalar la librería OAuth correspondiente en website/backend.
-  4. Implementar las dos rutas públicas en server.js:
-       GET /api/auth/google          redirige a la pantalla de consentimiento
-       GET /api/auth/google/callback  intercambia el código, valida el id_token,
-                                     busca o crea el usuario y firma la sesión
-                                     igual que /api/login
-  5. Conectar el botón del login a esa ruta.
-
-Consideraciones:
-  - Decidir qué pasa con el dominio del correo: si la cuenta es institucional (@liceo.cl)
-    debería heredar el rol según el área, y si es personal, quedar con acceso básico.
-  - La verificación en dos pasos del administrador debería seguir aplicándose igual que en
-    el inicio de sesión con contraseña.
-  - Hay que decidir si se permiten correos externos o solo los del establecimiento.
+Copia externa en Cloudflare R2 (opcional)
+  No es requisito para usar la página: sin R2 todo funciona igual. Solo añade una
+  copia que sobrevive si se borra el volumen o se pierde la cuenta de Railway.
+  El código ya está listo y no se activa mientras LC_BACKUP_AUTO no esté definido.
+  Falta, cuando se decida:
+    1. Crear el bucket privado labcontrol-backups y un token con Object Read & Write
+       limitado a ese bucket.
+    2. Añadir la regla de ciclo de vida de 90 días sobre el prefijo labcontrol/.
+    3. Cargar en Railway LC_BACKUP_AUTO=1, LC_BACKUP_S3_URI, LC_BACKUP_S3_ENDPOINT,
+       LC_BACKUP_S3_REGION=auto, AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY.
+    4. Redesplegar y comprobar el objeto en R2.
+  Coste esperado: dentro del plan gratuito de R2.
 
 
-3. OTRAS FUNCIONES PENDIENTES
-----------------------------
+2. RESPALDOS
+------------
+Backups del volumen de Railway (línea base, requiere plan de pago)
+  El backend corre hoy en el plan Free, que no incluye backups del volumen
+  (límite maxBackupsCount = 0). Para activarlos hace falta un plan de pago que
+  los incluya; comprobar en el panel antes de contratarlo.
+  Panel: https://railway.com/project/558eff01-f251-4071-a324-140a97223b34/service/96216807-0dc0-4da3-bf85-7e7d83a233f7?environmentId=74f2e700-73d7-4f4f-ba15-5d5224f0fe25
+  Guía:  https://docs.railway.com/volumes/backups
+  Pasos, una vez en un plan que los incluya:
+    1. Servicio del backend → Settings → Backups.
+    2. Activar Daily (6 días), Weekly (27 días) y Monthly (89 días).
+    3. Lanzar un backup manual y comprobar que aparece.
+  RPO: 24 h. RTO: minutos.
+  Límites: si se borra el volumen, Railway borra también sus backups; restaurar
+  un punto descarta los backups más nuevos. No cubre borrar el proyecto, la cuenta
+  ni una caída prolongada del proveedor.
+  Mientras el servicio siga en Free, la copia disponible es la descarga manual de
+  Configuración → Respaldos (y la copia externa en R2 si se activa).
+
+Probar una restauración en staging
+  Antes de restaurar, descargar el estado actual y verificar la copia elegida.
+  Después del redespliegue, ejecutar PRAGMA integrity_check y revisar usuarios,
+  agenda y equipos. Repetir al menos una vez al trimestre.
+  Responsable: administrador del sistema, con apoyo del encargado de informática.
+
+
+3. DESPLIEGUE Y SEGURIDAD PENDIENTES
+------------------------------------
+  0. Decidir el plan de Railway. El backend ya está activo en el plan Free
+     ($0/mes, $1 de uso incluido; consumo estimado actual ~$0,13/mes). Ese plan
+     no incluye backups automáticos del volumen ni dominio propio, y detiene el
+     servicio si se agota el crédito mensual. Para backups o dominio propio hay
+     que pasar a un plan de pago con método de pago desde
+     https://railway.com/account/billing.
+  1. Definir LC_PROXY_SECRET en Railway y en el proyecto de Cloudflare Pages.
+  2. Definir LC_SALUD_TOKEN en Railway y como secreto del repositorio
+     (gh secret set LC_SALUD_TOKEN).
+  3. Definir LC_PUBLIC_URL con la URL pública https del sitio
+     (https://insuco-labcontrol.pages.dev o el dominio propio), no la URL de
+     Railway: se usa para las cookies Secure, el CORS y los enlaces de correo.
+  4. Definir API_ORIGIN en Pages apuntando a la API de Railway.
+  5. Rotar la contraseña del administrador INSUCO, revocar sus refresh tokens y
+     revisar la auditoría por accesos antiguos con esa cuenta.
+  6. Activar 2FA en cada cuenta admin. Hoy es por usuario, no hay bloqueo global:
+     si se quiere obligatorio, hay que añadir esa comprobación al login.
+  7. Acercar el backend a Chile: recrear el servicio con su volumen en una región
+     próxima y volver a apuntar API_ORIGIN. Es manual, desde el panel.
+  8. Conectar el dominio propio: agregar el dominio a Cloudflare, cambiar los
+     servidores de nombres y añadirlo como dominio personalizado en Pages.
+     El plan Free de Railway no admite dominios propios; si se quiere usar el
+     dominio también en la API, primero hay que pasar a un plan de pago.
+  9. Renovar RAILWAY_API_TOKEN en GitHub: el actual no autoriza el proyecto
+     (el run 42421136498 falló con Unauthorized). Crear un token de cuenta en
+     https://railway.com/account/tokens y ejecutar:
+       gh secret set RAILWAY_API_TOKEN -R DEKFEP/LabControl-Project
+     Mientras tanto, la API se despliega a mano desde la raíz del proyecto:
+       npx @railway/cli@5 up website/backend --path-as-root --service api \
+         --environment production --project 558eff01-f251-4071-a324-140a97223b34 -c
+
+
+4. FUNCIONES PENDIENTES
+-----------------------
 Control remoto de equipos
-  El botón "Control" del módulo Equipos abre un panel simulado que solo escribe en el
-  registro de la interfaz. Falta el agente que se instala en cada equipo (por ejemplo con
-  Wake on LAN o un agente propio), sus comandos, la auditoría de las acciones y que el
-  estado del equipo se guarde en la base de datos.
-
-Fotos de los laboratorios
-  No hay fotografías reales de las salas. El módulo Laboratorios y el mapa funcionan con
-  los datos del inventario y los rótulos que dibuja la base de datos.
+  El botón abre un panel simulado. Falta el agente instalado en cada equipo, sus
+  comandos, la auditoría y guardar el estado real en la base.
 
 Aplicación móvil
-  El sistema está preparado para consumir la misma API REST desde una app nativa (segunda
-  etapa del proyecto), pero no existe.
-
-Captcha en el registro y en la recuperación de contraseña
-  Hoy la defensa es el límite de peticiones. Un captcha o una verificación equivalente
-  reduciría el relleno automatizado de cuentas.
+  La API está preparada para una app nativa, pero la app no existe.
 
 
-4. LIMITACIONES DEL DESPLIEGUE ACTUAL
-------------------------------------
-La IP real del profesor en la auditoría
-  RESUELTO en 4.1. El sitio (Pages Function) firma la IP que sí conoce (cf-connecting-ip)
-  con LC_PROXY_SECRET y el backend solo la acepta si el secreto coincide; así la auditoría
-  y el rate limiting usan la IP real y no la del proxy. Requiere definir el mismo
-  LC_PROXY_SECRET en la API y en el proyecto de Pages (ver website/backend/.env.example);
-  sin él, se sigue usando la IP del proxy.
+5. LIMITACIONES VIGENTES
+------------------------
+Avisos del sistema operativo
+  Dependen del navegador; en algunos solo se ven con la aplicación abierta.
 
-El backend está lejos de Chile
-  El servicio corre en una región de Estados Unidos y la latencia se nota en las primeras
-  peticiones. Railway elige la región al crear el servicio y no la cambia en sitio: para
-  acercarlo hay que recrear el servicio (con su volumen de datos) en una región más próxima
-  a Chile y volver a apuntar API_ORIGIN, en el proyecto de Pages, a la dirección nueva. Queda
-  como acción de infraestructura pendiente en el panel de Railway (la API no se redespliega
-  desde el workflow más que para subir el código).
-
-El dominio propio todavía no está conectado
-  El sitio se publica en una dirección de Cloudflare Pages. El dominio del proyecto ya
-  está registrado, pero sus servidores de nombres siguen en el registrador, así que hoy
-  muestra la página del registrador. Para conectarlo: agregar el dominio a la cuenta de
-  Cloudflare, cambiar los servidores de nombres por los que entrega Cloudflare y, cuando
-  propaguen, agregar el dominio personalizado al proyecto de Pages. Cloudflare emite el
-  certificado sin costo. Mientras tanto, las direcciones canónicas y las de las redes
-  sociales apuntan a la dirección de Pages.
-
-Los desafíos de la verificación en dos pasos vivían en memoria
-  RESUELTO en 4.2. Los desafíos de login y las configuraciones a medias ahora se guardan en
-  la base (tablas desafios_2fa y pendientes_2fa, migración 11): un reinicio del servicio ya
-  no obliga a repetir el paso del código y el estado queda cubierto por el respaldo.
-
-Los avisos del sistema operativo dependen del navegador
-  Las notificaciones cuando la pestaña está en segundo plano funcionan en los navegadores
-  que lo soportan; en el resto solo se ven con la aplicación abierta.
-
-El sitio sin conexión muestra la interfaz y el inventario
-  El service worker guarda los archivos estáticos y, además, las respuestas de solo lectura
-  del inventario (laboratorios y equipos), así que sin conexión se puede navegar y consultar
-  esos datos. Siguen sin poder crearse ni modificarse datos, no se ven datos nuevos y no se
-  guarda nada personal (usuarios, auditoría, agenda, reportes): en un equipo compartido nadie
-  ve la sesión de otro. Al cerrar sesión se borra lo guardado.
-
-Los scripts ya están fuera de las páginas
-  RESUELTO. El código vive en módulos externos; las páginas solo referencian scripts con
-  `src` (se comprobó que no queda ningún `<script>` embebido ni manejador `on*=` en línea).
+Modo sin conexión
+  El service worker guarda el inventario de solo lectura. No se pueden crear ni
+  modificar datos y no se guarda información personal. La caché de la API se
+  descarta al iniciar sesión, al verificar el segundo factor y ante cualquier
+  401 (M-09), así que una sesión caducada ya no deja los datos del usuario
+  anterior visibles para el siguiente.
 
 
-5. DECISIONES DOCUMENTADAS (NO SE CAMBIAN)
--------------------------------------------
-Se revisaron y se dejan como están, con su motivo:
-
-  - No hay captcha en el registro ni en la recuperación: el límite de peticiones cubre el
-    abuso y el uso real es de unos pocos profesores.
-  - La aplicación está reservada a personas adultas y se opera bajo la supervisión del
-    establecimiento; así consta en los términos de uso y en la política de privacidad.
-
-
-6. DESPLIEGUE DE LA VERSIÓN 4.2 (acciones en la infraestructura)
-----------------------------------------------------------------
-La web se publica sola, pero la API y las variables dependen del panel. Para cerrar el
-despliegue de 4.2:
-
-  1. La API ya se actualiza sola: el workflow la despliega con la CLI de Railway
-     (`railway up`), que sube website/backend con el commit actual. No hace falta activar
-     el despliegue automático en el panel de Railway.
-  2. Definir el mismo LC_PROXY_SECRET en el servicio de Railway y en el proyecto de
-     Cloudflare Pages.
-  3. Definir LC_SALUD_TOKEN con el mismo valor en el servicio de Railway (que ya no revela
-     la versión a cualquiera) y como secreto del repositorio (gh secret set LC_SALUD_TOKEN),
-     que es el que usa el chequeo de versión del workflow.
-  4. Definir LC_PUBLIC_URL con la URL https del sitio en Railway (habilita las cookies
-     Secure y el enlace de recuperación de contraseña).
-  5. Definir API_ORIGIN en el proyecto de Pages apuntando a la API de Railway.
-  6. Rotar la contraseña del administrador INSUCO: sus credenciales de ejemplo estuvieron
-     en el código hasta 4.1.
-  7. Acercar el backend a Chile: crear el servicio (con su volumen) en una región próxima
-     y volver a apuntar API_ORIGIN a la dirección nueva (ver "El backend está lejos de
-     Chile", en la sección 4). No se puede desde el workflow: es una acción del panel.
-
-Referencia de todas las variables: website/backend/.env.example.
+Todos los hallazgos del informe (M-01 a M-14 y B-01 a B-12) están cerrados en
+código; el detalle está en INFORME-AUDITORIA-4.8.txt, secciones 8.1 a 8.4.
+Lo que sigue en este documento son decisiones y acciones de infraestructura:
+proveedores externos, backups en el panel, rotación de credenciales y la
+publicación del cambio para que el subdominio muestre las URL limpias.

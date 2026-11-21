@@ -11,11 +11,11 @@ const CRED = {
 };
 
 async function login(page, user, pass) {
-  await page.goto("/login.html");
+  await page.goto("/login");
   await page.fill("#input-user", user);
   await page.fill("#input-pass", pass);
   await page.click("#btn-login-enviar");
-  await page.waitForURL("**/index.html");
+  await page.waitForURL("**/index");
 }
 
 test("login como administrador y el dashboard carga los datos", async ({ page }) => {
@@ -27,10 +27,10 @@ test("login como administrador y el dashboard carga los datos", async ({ page })
   await expect(page.locator(".user-profile-card__name")).toHaveText("Administrador Sistema");
 });
 
-test("configuracion.html muestra la versión vigente", async ({ page }) => {
+test("configuración muestra la versión vigente", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
 
-  await page.goto("/configuracion.html");
+  await page.goto("/configuracion");
 
   // La versión no se escribe a mano en el test: se toma del token `?v=` de los
   // propios assets (3.9.1 → "3.9"), que es el mismo que usa el service worker.
@@ -55,7 +55,7 @@ test("configuracion.html muestra la versión vigente", async ({ page }) => {
 });
 
 test("registro de cuenta propia: la cuenta queda pendiente de aprobación", async ({ page }) => {
-  await page.goto("/login.html");
+  await page.goto("/login");
   await page.click("#btn-ir-registrar");
   const sufijo = Date.now().toString().slice(-6);
   await page.fill("#reg-nombre", "Estela");
@@ -71,12 +71,12 @@ test("registro de cuenta propia: la cuenta queda pendiente de aprobación", asyn
   // No se inicia sesión sola: se muestra el aviso de que un administrador debe aprobarla.
   await expect(page.locator("#registro-ok")).toBeVisible({ timeout: 8000 });
   await expect(page.locator("#registro-ok")).toContainText("aprobación");
-  await expect(page).toHaveURL(/login\.html/);
+  await expect(page).toHaveURL(/login(?:\?|$)/);
 });
 
 test("notificación de nuevo profesor abre su ficha y permite otorgar el nivel (admin)", async ({ page }) => {
   // 1) Una cuenta nueva se registra (genera la notificación para el admin).
-  await page.goto("/login.html");
+  await page.goto("/login");
   await page.click("#btn-ir-registrar");
   const sufijo = Date.now().toString().slice(-7);
   const usuario = `prof_notif_${sufijo}`;
@@ -99,7 +99,7 @@ test("notificación de nuevo profesor abre su ficha y permite otorgar el nivel (
 
   // 3) Al pulsarla, abre Usuarios en la ficha del nuevo usuario.
   await item.click();
-  await page.waitForURL(/usuarios\.html\?id=prof_notif_/);
+  await page.waitForURL(/usuarios\?id=prof_notif_/);
   await expect(page.locator("#vista-usr-detalle")).toBeVisible({ timeout: 8000 });
   await expect(page.locator("#det-nombre")).toContainText("Noti");
   await expect(page.locator("#det-nivel-control")).toBeVisible();
@@ -118,7 +118,7 @@ test("usuarios: el admin desactiva, reactiva y elimina una cuenta", async ({ pag
   const usuario = `prof_baja_${sufijo}`;
 
   // Se crea una cuenta temporal (admin).
-  await page.goto("/usuarios.html");
+  await page.goto("/usuarios");
   await page.click("#btn-nuevo-usuario");
   await page.fill("#usr-nombre", "Temporal");
   await page.fill("#usr-apellido", "Baja");
@@ -132,7 +132,7 @@ test("usuarios: el admin desactiva, reactiva y elimina una cuenta", async ({ pag
   const grid = page.locator("#usr-grid");
 
   // Cuenta activa: el botón dice "Desactivar".
-  await page.goto(`/usuarios.html?id=${usuario}`);
+  await page.goto(`/usuarios?id=${usuario}`);
   await expect(detalle).toBeVisible({ timeout: 8000 });
   await expect(page.locator("#btn-desactivar-usr")).toHaveText("Desactivar");
 
@@ -142,7 +142,7 @@ test("usuarios: el admin desactiva, reactiva y elimina una cuenta", async ({ pag
   await expect(grid).toBeVisible({ timeout: 8000 });
 
   // Al reabrir la ficha, figura inactivo y el botón cambia a "Activar".
-  await page.goto(`/usuarios.html?id=${usuario}`);
+  await page.goto(`/usuarios?id=${usuario}`);
   await expect(detalle).toBeVisible({ timeout: 8000 });
   await expect(page.locator("#btn-desactivar-usr")).toHaveText("Activar");
   await expect(page.locator("#det-info-grid")).toContainText("Inactivo");
@@ -151,20 +151,20 @@ test("usuarios: el admin desactiva, reactiva y elimina una cuenta", async ({ pag
   page.once("dialog", (d) => d.accept());
   await page.click("#btn-desactivar-usr");
   await expect(grid).toBeVisible({ timeout: 8000 });
-  await page.goto(`/usuarios.html?id=${usuario}`);
+  await page.goto(`/usuarios?id=${usuario}`);
   await expect(page.locator("#btn-desactivar-usr")).toHaveText("Desactivar");
 
   // Eliminar: la cuenta desaparece y no se puede volver a abrir su ficha.
   page.once("dialog", (d) => d.accept());
   await page.click("#btn-eliminar-usr");
   await expect(grid).toBeVisible({ timeout: 8000 });
-  await page.goto(`/usuarios.html?id=${usuario}`);
+  await page.goto(`/usuarios?id=${usuario}`);
   await expect(grid).toBeVisible({ timeout: 8000 });
   await expect(detalle).toBeHidden();
 });
 
 test("el formulario de recuperación responde de forma genérica", async ({ page }) => {
-  await page.goto("/login.html");
+  await page.goto("/login");
   await page.click("#btn-ir-recuperar");
   await expect(page.locator("#recuperar-form")).toBeVisible();
   await page.fill("#rec-email", "nadie@liceo.cl");
@@ -173,7 +173,7 @@ test("el formulario de recuperación responde de forma genérica", async ({ page
 });
 
 test("el modal de términos abre desde el registro y cierra con la X", async ({ page }) => {
-  await page.goto("/login.html");
+  await page.goto("/login");
   await page.click("#btn-ir-registrar");
   await page.click("[data-term='terminos']");
   await expect(page.locator("#modal-terminos")).toBeVisible();
@@ -185,7 +185,7 @@ test("el modal de términos abre desde el registro y cierra con la X", async ({ 
 test("prof_camila ve los datos técnicos restringidos en Equipos", async ({ page }) => {
   await login(page, CRED.camila.user, CRED.camila.pass);
 
-  await page.goto("/equipos.html");
+  await page.goto("/equipos");
   await expect(page.locator("#aviso-sin-permiso")).toBeVisible();
   await expect(page.locator("[data-control]")).toHaveCount(0);
 });
@@ -193,7 +193,7 @@ test("prof_camila ve los datos técnicos restringidos en Equipos", async ({ page
 test("admin abre el control remoto de un equipo", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
 
-  await page.goto("/equipos.html");
+  await page.goto("/equipos");
   const btn = page.locator("[data-control]").first();
   await expect(btn).toBeVisible({ timeout: 8000 });
   await btn.click();
@@ -206,7 +206,7 @@ test("admin abre el control remoto de un equipo", async ({ page }) => {
 test("prof_camila edita su propio perfil y guarda", async ({ page }) => {
   await login(page, CRED.camila.user, CRED.camila.pass);
 
-  await page.goto("/configuracion.html");
+  await page.goto("/configuracion");
   await page.fill("#p-nombre", "Camila Editada");
   await page.click("#btn-guardar-cfg");
   await expect(page.locator("#toast-container")).toContainText("Configuración guardada correctamente.", { timeout: 8000 });
@@ -214,7 +214,7 @@ test("prof_camila edita su propio perfil y guarda", async ({ page }) => {
 
 test("solicitud de especialidad: prof_juan la pide y el admin la aprueba", async ({ page }) => {
   await login(page, CRED.juan.user, CRED.juan.pass);
-  await page.goto("/configuracion.html");
+  await page.goto("/configuracion");
 
   // Los no-admins ya no pueden modificar su área/departamento
   await expect(page.locator("#p-area")).toBeDisabled();
@@ -242,7 +242,7 @@ test("solicitud de especialidad: prof_juan la pide y el admin la aprueba", async
 
 test("admin edita un usuario existente desde su detalle", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
-  await page.goto("/usuarios.html");
+  await page.goto("/usuarios");
 
   await page.locator(".usr-card").filter({ hasText: "prof" }).first().click();
   await expect(page.locator("#vista-usr-detalle")).toBeVisible({ timeout: 8000 });
@@ -256,7 +256,7 @@ test("admin edita un usuario existente desde su detalle", async ({ page }) => {
 });
 
 test("cabeceras de seguridad: CSP estricto, sin caché en API y dotfiles negados", async ({ request }) => {
-  const html = await request.get("/index.html");
+  const html = await request.get("/index");
   const csp = html.headers()["content-security-policy"] || "";
   const scriptSrc = (csp.match(/(?:^|;)\s*script-src\s+([^;]+)/) || [])[1] || "";
   const scriptSrcAttr = (csp.match(/(?:^|;)\s*script-src-attr\s+([^;]+)/) || [])[1] || "";
@@ -280,7 +280,7 @@ test("cabeceras de seguridad: CSP estricto, sin caché en API y dotfiles negados
 });
 
 test("CSP estricto bloquea la ejecución de scripts inline", async ({ page }) => {
-  await page.goto("/login.html");
+  await page.goto("/login");
   await page.evaluate(() => {
     const s = document.createElement("script");
     s.textContent = 'document.body.setAttribute("data-csp-trap", "1")';
@@ -331,11 +331,11 @@ test("modo offline: el SW sirve el shell, los assets y el inventario desde cach�
     const cache = await caches.open(claves.find((k) => k.startsWith("labcontrol-v")));
     return (await cache.keys()).map((r) => new URL(r.url).pathname.replace(/^\//, ""));
   });
-  expect(cache).toContain("index.html");
+  expect(cache).toContain("index");
   expect(cache).toContain("css/style.css");
   expect(cache).toContain("js/app.js");
 
-  // La versión se lee del propio index.html y se cruza con la del service worker.
+  // La versión se lee del propio index y se cruza con la del service worker.
   // Si cambia un asset hay que subir a la vez el `?v=` de las páginas y el
   // CACHE_NAME del SW; si no, quien ya visitó la web sigue con la copia cacheada
   // anterior y no recibe los arreglos de seguridad.
@@ -360,13 +360,13 @@ test("modo offline: el SW sirve el shell, los assets y el inventario desde cach�
   await context.setOffline(true);
   const offline = await page.evaluate(async (v) => {
     const resultados = {};
-    for (const r of ["index.html", `css/style.css?v=${v}`, `js/app.js?v=${v}`]) {
+    for (const r of ["index", `css/style.css?v=${v}`, `js/app.js?v=${v}`]) {
       try { resultados[r] = (await fetch(r)).ok; }
       catch { resultados[r] = false; }
     }
     return resultados;
   }, version);
-  expect(offline["index.html"]).toBe(true);
+  expect(offline["index"]).toBe(true);
   expect(offline[`css/style.css?v=${version}`]).toBe(true);
   expect(offline[`js/app.js?v=${version}`]).toBe(true);
 
@@ -385,7 +385,7 @@ test("modo offline: el SW sirve el shell, los assets y el inventario desde cach�
 });
 
 test("accesibilidad: el enlace 'saltar al contenido' mueve el foco a main", async ({ page }) => {
-  await page.goto("/login.html");
+  await page.goto("/login");
   await page.keyboard.press("Tab");
   const skip = page.locator(".skip-nav");
   await expect(skip).toBeFocused();
@@ -395,7 +395,7 @@ test("accesibilidad: el enlace 'saltar al contenido' mueve el foco a main", asyn
 
 test("accesibilidad: foco atrapado en el modal y restaurado al cerrar", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
-  await page.goto("/usuarios.html");
+  await page.goto("/usuarios");
   const btn = page.locator("#btn-nuevo-usuario");
   await expect(btn).toBeVisible();
   await btn.click();
@@ -416,7 +416,7 @@ test("accesibilidad: foco atrapado en el modal y restaurado al cerrar", async ({
 
 test("accesibilidad: interruptores (switch) operables con teclado", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
-  await page.goto("/configuracion.html");
+  await page.goto("/configuracion");
   await page.click('#cfg-sidenav button[data-section="notificaciones"]');
   const tog = page.locator('.toggle[role="switch"]').first();
   await expect(tog).toBeVisible();
@@ -429,7 +429,7 @@ test("accesibilidad: interruptores (switch) operables con teclado", async ({ pag
 
 test("auditoría: el admin ve los registros de actividad y filtra", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
-  await page.goto("/configuracion.html");
+  await page.goto("/configuracion");
   await page.click('#cfg-sidenav button[data-section="auditoria"]');
 
   const tbody = page.locator("#aud-tbody");
@@ -445,7 +445,7 @@ test("auditoría: el admin ve los registros de actividad y filtra", async ({ pag
 
 test("calendario semanal: navegación entre semanas y columna de hoy", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
-  await page.goto("/disponibilidad.html");
+  await page.goto("/disponibilidad");
 
   await expect(page.locator("#semana-wrap .semana-tabla")).toContainText("Laboratorio", { timeout: 8000 });
   await expect(page.locator(".semana-th--hoy")).toHaveCount(1, { timeout: 8000 });
@@ -459,7 +459,7 @@ test("calendario semanal: navegación entre semanas y columna de hoy", async ({ 
 
 test("respaldos: el admin descarga un archivo .db", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
-  await page.goto("/configuracion.html");
+  await page.goto("/configuracion");
   await page.click('#cfg-sidenav button[data-section="backups"]');
 
   const downloadPromise = page.waitForEvent("download", { timeout: 10000 });
@@ -470,7 +470,7 @@ test("respaldos: el admin descarga un archivo .db", async ({ page }) => {
 
 test("reportes: exportar el reporte a CSV", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
-  await page.goto("/reportes.html");
+  await page.goto("/reportes");
 
   const tarjeta = page.locator(".rep-card").first();
   await expect(tarjeta).toBeVisible({ timeout: 8000 });
@@ -484,7 +484,7 @@ test("reportes: exportar el reporte a CSV", async ({ page }) => {
 
 test("2FA: el admin activa, verifica y desactiva en Configuración", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
-  await page.goto("/configuracion.html");
+  await page.goto("/configuracion");
   await page.click('#cfg-sidenav button[data-section="seguridad"]');
 
   const codigoTotp = ({ secreto, offset }) => page.evaluate(async ({ secreto, offset }) => {
@@ -572,7 +572,7 @@ test.describe("celular: barra inferior y campana en la cabecera", () => {
     await expect(page.locator(".user-avatar-btn img")).toBeVisible();
     await expect(page.locator(".user-avatar-btn")).not.toHaveAttribute("aria-haspopup", "dialog");
     await page.locator(".user-avatar-btn").click();
-    await expect(page).toHaveURL(/configuracion\.html$/);
+    await expect(page).toHaveURL(/configuracion(?:\?|$)/);
     await expect(page.locator("#panel-perfil")).toBeVisible();
     await expect(page.locator("#panel-perfil")).toContainText("Administrador Sistema");
     await expect(page.locator(".user-profile-card")).toBeHidden();
@@ -595,7 +595,7 @@ test.describe("celular: barra inferior y campana en la cabecera", () => {
     expect(cerrar.y + cerrar.height).toBeLessThanOrEqual((await page.locator(".sidebar").boundingBox()).y);
     await page.screenshot({ path: testInfo.outputPath("perfil-cerrar-sesion-movil-320.png"), animations: "disabled" });
     await page.locator("#btn-cerrar-sesion-perfil").click();
-    await expect(page).toHaveURL(/login\.html/);
+    await expect(page).toHaveURL(/login(?:\?|$)/);
   });
 
   test("la campana sin recuadro está arriba a la derecha y sus avisos caben en pantalla", async ({ page }) => {
@@ -616,7 +616,7 @@ test.describe("celular: barra inferior y campana en la cabecera", () => {
     expect(avisos.x + avisos.width).toBeLessThanOrEqual(390);
     expect(avisos.y + avisos.height).toBeLessThanOrEqual(barra.y);
     await page.locator(".user-avatar-btn").click();
-    await expect(page).toHaveURL(/configuracion\.html$/);
+    await expect(page).toHaveURL(/configuracion(?:\?|$)/);
     await expect(panel).toBeHidden();
     await expect(page.locator(".user-profile-card")).toBeHidden();
     await expect(page.locator("#panel-perfil")).toBeVisible();

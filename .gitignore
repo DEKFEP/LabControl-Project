@@ -5,6 +5,7 @@ node_modules/
 website/backend/database/*.db
 website/backend/database/*.db-shm
 website/backend/database/*.db-wal
+website/backend/database/backups/
 
 # Clave JWT persistente generada en tiempo de ejecución
 website/backend/database/.jwt-secret

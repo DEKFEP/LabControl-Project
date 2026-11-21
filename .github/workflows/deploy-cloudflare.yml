@@ -1,35 +1,46 @@
 name: Deploy a Cloudflare Pages
 
 on:
-  push:
+  # El deploy solo corre despues de que CI haya terminado en verde para rama
+  # master; asi nunca se publica un commit con tests rojos. El dispatch manual
+  # sigue disponible para recuperar un despliegue sin esperar al CI.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [master]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Dos pushes seguidos: el segundo espera al primero en vez de competir por el
-# mismo proyecto de Pages.
+# Cada commit tiene su propio despliegue; un push posterior no cancela uno a
+# medias. Con workflow_run, GITHUB_SHA apunta a la rama, asi que COMMIT fija el
+# commit exacto que termino el CI.
 concurrency:
-  group: cloudflare-pages
-  cancel-in-progress: true
+  group: cloudflare-pages-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
 
 env:
   PROYECTO: insuco-labcontrol
   HOST: insuco-labcontrol.pages.dev
   CUENTA: 6384cb8e31c88eef7f7b2547b5099c68
+  COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   deploy:
     name: Publicar la web y comprobar compatibilidad de la API
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout
         # Historial completo: el chequeo de version de mas abajo necesita saber
         # en que commit se toco `website/backend` por ultima vez, y con el
         # `fetch-depth: 1` de GitHub Actions ese commit no existe todavia.
-        uses: actions/checkout@v4
+        # En workflow_run hay que fijar el SHA: el GITHUB_SHA del evento apunta
+        # a la cabeza de la rama, que puede ya no ser la que paso el CI.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ env.COMMIT }}
           fetch-depth: 0
 
       # El proyecto de Pages se creo por CLI (Direct Upload) y Cloudflare no
@@ -37,7 +48,7 @@ jobs:
       # desde aqui. Wrangler se instala a mano porque `wrangler-action` se trae
       # su propia version y deja pasar un token vacio en silencio.
       - name: Instalar Wrangler
-        run: npm install --global wrangler@4
+        run: npm install --global wrangler@4.166.0
 
       - name: Publicar la web
         env:
@@ -67,12 +78,12 @@ jobs:
       # mensaje de arranque no necesitan un despliegue de Railway.
       - name: Detectar cambios de versión de API
         id: api
-        env:
-          ANTES: ${{ github.event.before }}
         run: |
           set -euo pipefail
           actual="$(sed -n 's/.*version: *"\([0-9.]*\)".*/\1/p' website/backend/server.js)"
-          anterior="$(git show "${ANTES}:website/backend/server.js" 2>/dev/null | sed -n 's/.*version: *"\([0-9.]*\)".*/\1/p' || true)"
+          # workflow_run no trae github.event.before: el padre del commit que
+          # termino el CI es el estado anterior de la rama.
+          anterior="$(git show "${COMMIT}^:website/backend/server.js" 2>/dev/null | sed -n 's/.*version: *"\([0-9.]*\)".*/\1/p' || true)"
           [ -n "$actual" ] || { echo "::error::No se pudo leer la versión de API."; exit 1; }
           if [ "$actual" = "$anterior" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -103,7 +114,7 @@ jobs:
             exit 0
           fi
 
-          npm install --global @railway/cli@5
+          npm install --global @railway/cli@5.75.0
 
           # La config del servicio dice si construye desde un subdirectorio del
           # repositorio (rootDirectory) o si la raiz del servicio es la carpeta
@@ -132,7 +143,7 @@ jobs:
               --project "$PROYECTO_ID" \
               --environment "$ENVIRONMENT_ID" \
               --service "$SERVICE_ID" \
-              --message "$GITHUB_SHA"
+              --message "$COMMIT"
           }
 
           if [ -n "$root" ] && [ "$root" != "/" ]; then
@@ -143,7 +154,7 @@ jobs:
             subir website/backend --path-as-root
           fi
 
-          echo "API desplegada en Railway con el commit ${GITHUB_SHA:0:7}."
+          echo "API desplegada en Railway con el commit ${COMMIT:0:7}."
 
       - name: Comprobar la web
         run: |
@@ -153,18 +164,28 @@ jobs:
           # de dar el despliegue por malo.
           for intento in 1 2 3 4 5 6 7 8 9 10; do
             fallos=0
-            # Cada pagina tiene que responder 200 y no 308: Pages recorta la
-            # extension .html y manda a la ruta sin ella, lo que rompe los
-            # enlaces y el service-worker. Lo evita `_redirects`.
-            for pagina in index login laboratorios disponibilidad equipos reportes usuarios configuracion; do
-              codigo="$(curl -o /dev/null -s -w '%{http_code}' "https://$HOST/$pagina.html")"
+            # Las URLs publicas son limpias: se comprueban las rutas sin .html.
+            # La raiz sirve index.html; el resto son rutas de una sola palabra.
+            for pagina in "" login laboratorios disponibilidad equipos reportes usuarios configuracion; do
+              ruta="/${pagina}"
+              codigo="$(curl -o /dev/null -s -w '%{http_code}' "https://$HOST$ruta")"
               if [ "$codigo" = "200" ]; then
-                echo "OK   /$pagina.html"
+                echo "OK   $ruta"
               else
-                echo "::error::/$pagina.html devolvio $codigo (se espera 200 sin redireccion)"
+                echo "::error::$ruta devolvio $codigo (se espera 200)"
                 fallos=$((fallos + 1))
               fi
             done
+
+            # Una URL historica con .html debe redirigir a la limpia para que
+            # la extension no aparezca nunca en la barra del navegador.
+            codigo="$(curl -o /dev/null -s -w '%{http_code}' "https://$HOST/login.html")"
+            if [ "$codigo" = "308" ]; then
+              echo "OK   /login.html -> /login (308)"
+            else
+              echo "::error::/login.html devolvio $codigo (se espera 308 a /login)"
+              fallos=$((fallos + 1))
+            fi
 
             codigo="$(curl -o /dev/null -s -w '%{http_code}' "https://$HOST/robots.txt")"
             [ "$codigo" = "200" ] && echo "OK   /robots.txt" || { echo "::error::/robots.txt devolvio $codigo"; fallos=$((fallos + 1)); }
@@ -251,5 +272,5 @@ jobs:
           fi
 
           echo "::error::La web necesita la API $api_necesaria, pero /api/salud dice $api: la API quedo con el codigo viejo."
-          echo "::error::El despliegue de Railway no tomo el commit $GITHUB_SHA. Revisa que el servicio construya desde este repositorio y que tenga el despliegue automatico activado."
+          echo "::error::El despliegue de Railway no tomo el commit $COMMIT. Revisa que el servicio construya desde este repositorio y que tenga el despliegue automatico activado."
           exit 1

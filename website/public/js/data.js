@@ -1,4 +1,5 @@
-/* data.js — cliente de la API; si no hay servidor usa los datos locales (demo). */
+/* data.js — cliente de la API; el modo demo es explícito (?demo=1), nunca un
+   respaldo automático ante errores de red o rutas no encontradas. */
 
 // Ruta relativa, sin barra inicial: el sitio puede servirse en la raíz de un
 // dominio o dentro de un subdirectorio (GitHub Pages lo publica en
@@ -11,44 +12,78 @@ const API_BASE = "api";
    retroalimentación inmediata; la API vuelve a validar. Devuelve el mensaje de
    error o null. */
 export const MIN_PASSWORD = 10;
+export const MAX_PASSWORD_BYTES = 72;
 export function errorPassword(pw) {
   if (typeof pw !== "string" || pw.length === 0) return "La contraseña es obligatoria";
   if (pw.length < MIN_PASSWORD) return `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres`;
+  if (new TextEncoder().encode(pw).length > MAX_PASSWORD_BYTES) return `La contraseña no puede superar ${MAX_PASSWORD_BYTES} bytes`;
   if (!/[a-z]/.test(pw)) return "La contraseña debe incluir al menos una letra minúscula";
   if (!/[A-Z]/.test(pw)) return "La contraseña debe incluir al menos una letra mayúscula";
   if (!/[0-9]/.test(pw)) return "La contraseña debe incluir al menos un número";
   return null;
 }
 
-/* Modo demo (respaldo sin servidor) */
+/* Modo demo: SOLO se activa con ?demo=1 o window.LC_FORZAR_DEMO = true.
+   Nunca se activa porque la API no responda: mostrar datos ficticios como si
+   fueran reales es precisamente el hallazgo M-05 de la auditoría. */
+
+const DEMO_EXPLICITO =
+  new URLSearchParams(window.location.search).get("demo") === "1" ||
+  window.LC_FORZAR_DEMO === true;
+// Credencial única del modo demostración. Es pública porque el propio cliente
+// es de código abierto, pero al menos no se acepta cualquier contraseña.
+export const DEMO_PASSWORD = "Demo12345";
 
 let MODO_DEMO = false;
 
+function mostrarAvisoDemo() {
+  if (document.getElementById("lc-demo-banner")) return;
+  const pintar = () => {
+    if (document.getElementById("lc-demo-banner")) return;
+    const aviso = document.createElement("div");
+    aviso.id = "lc-demo-banner";
+    aviso.setAttribute("role", "status");
+    aviso.textContent = `Modo demostración: datos de ejemplo, no datos reales. Contraseña demo: ${DEMO_PASSWORD}`;
+    (document.body || document.documentElement).prepend(aviso);
+  };
+  if (document.body) pintar();
+  else document.addEventListener("DOMContentLoaded", pintar, { once: true });
+}
+
 function activarModoDemo() {
-  if (MODO_DEMO) return Promise.resolve();
+  if (MODO_DEMO) return Promise.resolve(true);
+  if (!DEMO_EXPLICITO) return Promise.resolve(false);
   if (window.DEMO) {
     MODO_DEMO = true;
-    console.warn("[LabControl] API no disponible — usando modo demo con datos locales.");
-    return Promise.resolve();
+    mostrarAvisoDemo();
+    return Promise.resolve(true);
   }
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const s = document.createElement("script");
     s.onload = () => {
       if (!window.DEMO) {
-        reject(new Error("datos-demo.js cargado pero window.DEMO no definido."));
+        console.error("[LabControl] datos-demo.js cargado sin window.DEMO.");
+        resolve(false);
         return;
       }
       MODO_DEMO = true;
-      console.warn("[LabControl] API no disponible — usando modo demo con datos locales.");
-      resolve();
+      mostrarAvisoDemo();
+      resolve(true);
     };
-    s.onerror = () => reject(new Error("Sin API ni datos de respaldo disponibles."));
+    s.onerror = () => {
+      console.error("[LabControl] No se pudieron cargar los datos de demostración.");
+      resolve(false);
+    };
     // Los scripts de página viven en la raíz y los módulos en js/, así que el
     // relleno de demo se pide con la ruta desde la página, no desde este módulo.
     s.src = "js/datos-demo.js";
     document.head.appendChild(s);
   });
 }
+
+// Se resuelve antes de la primera petición; así el modo demo ya está listo
+// cuando se decide entre la API real y los datos locales.
+const DEMO_LISTO = activarModoDemo();
 
 const copia = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
 
@@ -476,13 +511,13 @@ function demoRequest(metodo, ruta, cuerpo) {
       return copia(D.config);
 
     case "POST login": {
-      // En modo demo no se guardan contraseñas (no se publican credenciales):
-      // basta con que la cuenta exista y se escriba alguna contraseña.
+      // En modo demo no se publican contraseñas de cuentas reales: se exige la
+      // credencial única de demostración, mostrada en el banner de la página.
       const usuario = String(cuerpo?.usuario ?? "").trim().toLowerCase();
       const usr = D.usuarios.find(
         (u) => u.id.toLowerCase() === usuario || String(u.email).toLowerCase() === usuario
       );
-      if (!usr || !String(cuerpo?.password ?? "").trim()) throw new Error("Credenciales incorrectas");
+      if (!usr || String(cuerpo?.password ?? "") !== DEMO_PASSWORD) throw new Error("Credenciales incorrectas");
       // Las cuentas pendientes de aprobación no pueden iniciar sesión (igual que
       // en la API real, que las trata como credenciales inválidas).
       if (usr.activo === false) throw new Error("Credenciales incorrectas");
@@ -639,7 +674,17 @@ async function pedirRefresh() {
   }
 }
 
+// Avisa al service worker de que debe soltar el inventario cacheado. Se llama
+// al entrar, al salir y ante un 401: la caché no distingue roles y no puede
+// conservar datos de la sesión anterior en un equipo compartido (M-09).
+export function limpiarCacheApi() {
+  try {
+    navigator.serviceWorker?.controller?.postMessage({ type: "limpiar-cache-api" });
+  } catch { /* sin service worker */ }
+}
+
 async function pedir(ruta, opciones = {}, _reintentado = false) {
+  await DEMO_LISTO;
   const metodo = opciones.method ?? "GET";
   let cuerpo;
   try {
@@ -660,6 +705,9 @@ async function pedir(ruta, opciones = {}, _reintentado = false) {
 
       if (res.status === 401) {
         const err = await res.json().catch(() => ({}));
+        // La caché de inventario puede pertenecer a otro rol: se descarta antes
+        // de cerrar la sesión (M-09).
+        limpiarCacheApi();
         // Solo se cierra la sesión si realmente había una. Antes, un 401 del
         // propio login (usuario o contraseña incorrectos) terminaba en
         // AUTH.logout() → window.location, así que el mensaje de error nunca se
@@ -675,16 +723,8 @@ async function pedir(ruta, opciones = {}, _reintentado = false) {
 
       const tipo = res.headers.get("content-type") ?? "";
       if (!tipo.includes("json")) {
-        // 404/405 con HTML: en este origen no hay ninguna API montada (host
-        // estático tipo GitHub Pages o Vercel), así que se usa el respaldo local.
-        if (res.status === 404 || res.status === 405) {
-          await activarModoDemo();
-          return demoRequest(metodo, ruta, cuerpo);
-        }
-        // Cualquier otro contenido que no sea JSON (HTML de un proxy inverso,
-        // página de error del hosting, 500) NO significa "no hay servidor".
-        // Antes activaba el modo demo y el usuario veía datos ficticios creyendo
-        // que eran los reales.
+        // Ni un 404/405 ni un HTML de proxy activan ya el modo demo: eso
+        // hacía que una mala configuración mostrara datos falsos como reales.
         throw new Error(`El servidor respondió con un contenido inesperado (${res.status || "sin estado"}). Revisa la conexión o la URL de la API.`);
       }
       if (!res.ok) {
@@ -693,9 +733,10 @@ async function pedir(ruta, opciones = {}, _reintentado = false) {
       }
       return res.json();
     } catch (err) {
-      // Solo un fallo de red (TypeError) justifica el respaldo local.
-      if (!(err instanceof TypeError)) throw err;
-      await activarModoDemo();
+      if (err instanceof TypeError) {
+        throw new Error("No se pudo conectar con la API. Revisa tu conexión o la configuración del servidor.");
+      }
+      throw err;
     }
   }
 
@@ -931,9 +972,12 @@ export const AUTH = {
       if (data.requires2FA) return data;
       if (!data.usuario) throw new Error("La respuesta del servidor no incluyó la sesión.");
       actualizarSesion(data.usuario);
+      limpiarCacheApi();
       return data.usuario;
     } catch (err) {
-      if (err instanceof TypeError) await activarModoDemo();
+      if (err instanceof TypeError) {
+        throw new Error("No se pudo conectar con la API. Revisa tu conexión o la configuración del servidor.");
+      }
       throw err;
     }
   },
@@ -944,6 +988,7 @@ export const AUTH = {
       if (MODO_DEMO) {
         const data = await demoRequest("POST", "/login/2fa", { loginId, codigo: String(codigo).trim() });
         actualizarSesion(data.usuario);
+        limpiarCacheApi();
         return data.usuario;
       }
       const res = await fetch(`${API_BASE}/login/2fa`, {
@@ -960,9 +1005,12 @@ export const AUTH = {
       const data = await res.json();
       if (!data.usuario) throw new Error("No se pudo completar la verificación");
       actualizarSesion(data.usuario);
+      limpiarCacheApi();
       return data.usuario;
     } catch (err) {
-      if (err instanceof TypeError) await activarModoDemo();
+      if (err instanceof TypeError) {
+        throw new Error("No se pudo conectar con la API. Revisa tu conexión o la configuración del servidor.");
+      }
       throw err;
     }
   },
@@ -987,19 +1035,48 @@ export const AUTH = {
     return apiSend("POST", `/recuperar-contrasena/${token}`, { newPassword });
   },
 
-  logout() {
-    // Revoca la sesión en el servidor (best-effort) y limpia las cookies
-    // HttpOnly; el refresh token ya no se guarda en el navegador.
-    fetch(`${API_BASE}/logout`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin"
-    }).catch(() => {});
-    // Borra el inventario guardado para consultarlo sin conexión: no debe quedar
-    // nada de esta sesión en un equipo compartido.
-    try { navigator.serviceWorker?.controller?.postMessage({ type: "limpiar-cache-api" }); } catch { /* sin service worker */ }
+  async logout() {
+    // `await` + `keepalive`: la navegación siguiente no puede cancelar la
+    // revocación del refresh token (M-12). El timeout evita esperar para siempre
+    // si la red está caída; en ese caso se limpia igualmente el cliente.
+    const control = typeof AbortController === "function" ? new AbortController() : null;
+    const temporizador = control ? setTimeout(() => control.abort(), 2000) : null;
+    try {
+      await fetch(`${API_BASE}/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        keepalive: true,
+        signal: control?.signal
+      });
+    } catch { /* sin red: se limpia igualmente el cliente */ }
+    finally {
+      if (temporizador) clearTimeout(temporizador);
+    }
+    limpiarCacheApi();
     try { localStorage.removeItem("lc_sesion"); } catch { /* sin almacenamiento */ }
-    window.location.href = "login.html";
+    try { sessionStorage.removeItem("lc_reset_demo"); } catch { /* sin almacenamiento */ }
+    window.location.href = "login";
+  },
+
+  // El localStorage es solo una caché: el rol real lo decide el servidor con la
+  // cookie HttpOnly. Las páginas deben usar esta función antes de decidir qué
+  // menú o botones mostrar (B-08).
+  async sesionVerificada() {
+    if (MODO_DEMO) return this.getSesion();
+    try {
+      const datos = await apiGet("/me");
+      if (!datos?.usuario) return null;
+      // actualizarSesion reescribe lc_sesion con lo que dijo el servidor: el
+      // rol y el id del localStorage dejan de ser la fuente de la decisión.
+      return actualizarSesion(datos.usuario);
+    } catch {
+      // Ante 401, red caída o API no disponible NO se devuelve la sesión del
+      // localStorage: eso permitiría falsear el rol editando el almacenamiento.
+      // También se borra la copia local para que AUTH.esAdmin() no la use.
+      try { localStorage.removeItem("lc_sesion"); } catch { /* sin almacenamiento */ }
+      return null;
+    }
   },
 
   getSesion() {
@@ -1014,7 +1091,7 @@ export const AUTH = {
   requiereLogin() {
     const sesion = this.getSesion();
     if (!sesion) {
-      window.location.href = "login.html";
+      window.location.href = "login";
       return null;
     }
     return sesion;

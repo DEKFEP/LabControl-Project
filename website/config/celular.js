@@ -4,7 +4,7 @@ const os = require("os");
 const net = require("net");
 
 const PUERTO = process.env.PORT || 3000;
-const RUTA_INICIO = "/login.html";
+const RUTA_INICIO = "/login";
 
 // IP local para la LAN
 

@@ -75,8 +75,8 @@ test("las migraciones declaran su reversibilidad y su nota", async () => {
 test("las migraciones se aplican en orden y quedan registradas", async () => {
   const { db, estadoMigraciones } = await cargarComo("lc-mig-orden-");
   try {
-    expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-    expect(estadoMigraciones(db)).toMatchObject({ faltantes: [], aplicadas: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] });
+    expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    expect(estadoMigraciones(db)).toMatchObject({ faltantes: [], aplicadas: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] });
     // Y la base recién creada cumple el contrato de datos de la aplicación.
     expect(columnasDe(db, "reportes")).toContain("adjuntos");
     expect(columnasDe(db, "laboratorios")).toContain("imagenes");
@@ -91,13 +91,68 @@ test("las migraciones se aplican en orden y quedan registradas", async () => {
   }
 });
 
+test("B-07: reporte_id referencia reportes y la migración 13 limpia huérfanos", async () => {
+  const { db, MIGRACIONES, revertirMigraciones } = await cargarComo("lc-mig-fk-reporte-");
+  try {
+    const fks = db.prepare("PRAGMA foreign_key_list(notificaciones)").all();
+    expect(fks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: "reporte_id", table: "reportes", on_delete: "SET NULL" })
+    ]));
+
+    // Borrar un reporte deja la notificación sin referencia, no apuntando a un
+    // ID que ya no existe.
+    db.prepare("INSERT INTO reportes (id, tipo, titulo) VALUES ('rep_prueba', 'uso', 'Prueba')").run();
+    db.prepare(
+      "INSERT INTO notificaciones (usuario_id, tipo, titulo, reporte_id) VALUES ('prof_juan', 'info', 'Aviso', 'rep_prueba')"
+    ).run();
+    db.prepare("DELETE FROM reportes WHERE id = 'rep_prueba'").run();
+    expect(db.prepare("SELECT reporte_id FROM notificaciones WHERE titulo = 'Aviso'").get().reporte_id).toBeNull();
+
+    // Una base antigua puede tener huérfanos: al reaplicar la 13 se dejan sin
+    // reporte_id en lugar de abortar por la clave foránea nueva.
+    await revertirMigraciones(db, 12);
+    expect(versionesDe(db)).not.toContain(13);
+    db.prepare(
+      "INSERT INTO notificaciones (usuario_id, tipo, titulo, reporte_id) VALUES ('prof_juan', 'info', 'Huerfana', 'reporte_inexistente')"
+    ).run();
+    await MIGRACIONES.find((m) => m.version === 13).migrar(db);
+
+    const huerfana = db.prepare("SELECT reporte_id FROM notificaciones WHERE titulo = 'Huerfana'").get();
+    expect(huerfana.reporte_id).toBeNull();
+    expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    expect(Object.values(db.prepare("PRAGMA integrity_check").get())[0]).toBe("ok");
+  } finally {
+    db.close();
+  }
+});
+
+test("B-12: se guarda .bak antes de migrar y la base se abre con integridad completa", async () => {
+  const moduloViejo = await cargarComo("lc-mig-bak-");
+  await moduloViejo.revertirMigraciones(moduloViejo.db, 12);
+  moduloViejo.db.close();
+
+  const ruta = path.join(moduloViejo.dir, "labcontrol.db");
+  expect(fs.existsSync(`${ruta}.bak`)).toBe(false);
+
+  process.env.LC_DB_DIR = moduloViejo.dir;
+  const moduloNuevo = await import(`../db.js?v=${Date.now()}-bak`);
+  try {
+    expect(fs.existsSync(`${ruta}.bak`)).toBe(true);
+    expect(moduloNuevo.estadoMigraciones(moduloNuevo.db).faltantes).toEqual([]);
+    expect(versionesDe(moduloNuevo.db)).toContain(13);
+    expect(Object.values(moduloNuevo.db.prepare("PRAGMA integrity_check").get())[0]).toBe("ok");
+  } finally {
+    moduloNuevo.db.close();
+  }
+});
+
 test("rollback: sin `forzar` se detiene en la primera irreversible y no toca nada", async () => {
   const { db, revertirMigraciones } = await cargarComo("lc-mig-alto-");
   try {
     // La 10 (alineación de columnas) no tiene paso de vuelta: cualquier objetivo
     // por debajo de 10 se topa con ella antes de revertir nada.
     await expect(revertirMigraciones(db, 9)).rejects.toThrow(/migración 10/);
-    expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
   } finally {
     db.close();
   }
@@ -110,7 +165,7 @@ test("rollback: con `forzar` baja hasta el objetivo pedido y ni una más", async
 
     // La 10 y la 9 solo se "olvidan" (no tienen vuelta que ejecutar); la 12, la
     // 11, la 8 y la 7 sí se deshacen de verdad.
-    expect(revertidas).toEqual([12, 11, 10, 9, 8, 7]);
+    expect(revertidas).toEqual([13, 12, 11, 10, 9, 8, 7]);
     expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6]);
     expect(existeTabla(db, "auditoria")).toBe(false);
     expect(columnasDe(db, "usuarios")).not.toContain("totp_secreto");
@@ -133,7 +188,7 @@ test("rollback: la 5 se deshace sin dejar la referencia de notificaciones colgan
     ).run(id);
 
     const revertidas = await revertirMigraciones(db, 4, { forzar: true });
-    expect(revertidas).toEqual([12, 11, 10, 9, 8, 7, 6, 5]);
+    expect(revertidas).toEqual([13, 12, 11, 10, 9, 8, 7, 6, 5]);
     expect(existeTabla(db, "solicitudes_especialidad")).toBe(false);
     expect(columnasDe(db, "notificaciones")).not.toContain("solicitud_id");
     // Con foreign_keys activo, si la tabla se borrara antes de soltar la
@@ -151,7 +206,7 @@ test("rollback: es idempotente (revertir dos veces no cambia la segunda)", async
   try {
     const primera = await revertirMigraciones(db, 6, { forzar: true });
     const segunda = await revertirMigraciones(db, 6, { forzar: true });
-    expect(primera).toEqual([12, 11, 10, 9, 8, 7]);
+    expect(primera).toEqual([13, 12, 11, 10, 9, 8, 7]);
     expect(segunda).toEqual([]);
     expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6]);
     // Y pedir el estado actual no hace nada.
@@ -174,7 +229,7 @@ test("rollback: si un paso de vuelta falla, se deshacen también los anteriores"
       /Falló la reversión de la migración 7/
     );
 
-    expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     expect(existeTabla(db, "contrasena_resets")).toBe(true);
     expect(existeTabla(db, "auditoria")).toBe(true);
     expect(columnasDe(db, "usuarios")).toContain("totp_secreto");
@@ -187,7 +242,7 @@ test("rollback: si un paso de vuelta falla, se deshacen también los anteriores"
     // Quitado el obstáculo, la reversión vuelve a funcionar y completa el camino.
     db.exec("DROP INDEX idx_prueba_totp");
     const revertidas = await revertirMigraciones(db, 6, { forzar: true });
-    expect(revertidas).toEqual([12, 11, 10, 9, 8, 7]);
+    expect(revertidas).toEqual([13, 12, 11, 10, 9, 8, 7]);
     expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6]);
   } finally {
     db.close();
@@ -210,7 +265,7 @@ test("aplicar migraciones: completa huecos en schema_migrations en vez de saltar
   try {
     // Fiarse solo de MAX(version) habría dejado la 4 sin aplicar para siempre;
     // el motor la completa porque compara el conjunto, no el máximo.
-    expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(versionesDe(db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     expect(estadoMigraciones(db).faltantes).toEqual([]);
   } finally {
     db.close();
@@ -254,7 +309,7 @@ test("migración 10: repara una base que dice estar al día pero perdió una col
   const reparada = await import(`../db.js?v=${Date.now()}-${Math.random()}`);
   try {
     expect(columnasDe(reparada.db, "laboratorios")).toContain("imagenes");
-    expect(versionesDe(reparada.db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(versionesDe(reparada.db)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     expect(reparada.estadoMigraciones(reparada.db).faltantes).toEqual([]);
     // La semilla sigue funcionando sobre la base reparada y es idempotente.
     const resumen = await reparada.aplicarSemilla(reparada.db);

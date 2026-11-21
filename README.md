@@ -97,6 +97,14 @@ no cambia.
 El backend no puede vivir en el mismo hosting que la web porque usa `node:sqlite`, escribe
 la base en disco y crea respaldos: necesita un proceso Node con sistema de archivos.
 
+**Concurrencia: una sola instancia escritora.** LabControl usa `node:sqlite` de forma
+síncrona sobre un archivo local: todas las consultas comparten el mismo proceso y el mismo
+volumen. Está pensado para un centro pequeño con **un único proceso de API** (un réplica en
+Railway, sin escalado horizontal). Dos procesos escribiendo el mismo volumen pueden
+perder escrituras o dejar la base inconsistente; para escalar haría falta mover la base a un
+motor con bloqueo y conexiones reales. Antes de aplicar migraciones se guarda `labcontrol.db.bak`,
+y cada restauración pasa un `PRAGMA integrity_check` completo antes de sustituir la base.
+
 ### En local (un solo proceso)
 
 El mismo Express que expone la API también entrega el sitio estático, de modo que todo
@@ -126,13 +134,12 @@ Si el hosting no copia `public/` junto a `backend/`, se indica la ruta con `LC_P
 │   │   ├── index.html                  Panel
 │   │   ├── laboratorios.html           Laboratorios y su ficha
 │   │   ├── disponibilidad.html         Estado y agenda de reservas
-│   │   ├── mapa.html                   Mapa del establecimiento
 │   │   ├── equipos.html                Inventario de equipos
 │   │   ├── reportes.html               Reportes
 │   │   ├── usuarios.html               Usuarios
 │   │   ├── configuracion.html          Configuración
 │   │   ├── _headers                    Cabeceras de seguridad del hosting estático
-│   │   ├── _redirects                  Sirve cada página con 200, sin redirecciones
+│   │   ├── _redirects                  URLs antiguas con .html → rutas limpias (308)
 │   │   ├── 404.html                    Página de error
 │   │   ├── robots.txt                  Instrucciones para buscadores
 │   │   ├── service-worker.js           Caché y funcionamiento sin conexión
@@ -157,11 +164,19 @@ Si el hosting no copia `public/` junto a `backend/`, se indica la ruta con `LC_P
 └── PENDIENTES.txt                      Pendientes y limitaciones conocidas
 ```
 
+Los nombres `.html` del árbol son archivos en disco, **no URLs públicas**. El sitio
+se navega con rutas limpias (`/login`, `/equipos`, `/configuración`…); Cloudflare
+Pages sirve cada archivo en su ruta sin extensión y `_redirects` redirige 308
+cualquier enlace antiguo con `.html` a la ruta limpia. El servidor local hace lo
+mismo con `extensions: ["html"]`.
+
 ---
 
 ## 5. Requisitos
 
-- **Node.js 22.5 o superior** (el backend usa el módulo `node:sqlite`, incorporado en Node).
+- **Node.js 22.13 o superior** (el backend usa `node:sqlite` sin flag experimental
+  a partir de esa versión; con Node 22.5–22.12 el arranque falla). Se recomienda
+  Node 24, la versión fijada en `.nvmrc` y usada en CI.
 - Un navegador moderno. Para el celular, acceso a la red local o un código QR.
 
 ---
@@ -232,13 +247,15 @@ para el backend (pruebas, lint y tipos) y otro para las pruebas de interfaz.
 
 ## 9. Publicación
 
-Hay **un solo despliegue**, disparado por `push` a `master` desde
-`.github/workflows/deploy-cloudflare.yml`:
+Hay **un solo despliegue**, disparado por `workflow_run` cuando el flujo de CI termina en
+verde para `master` desde `.github/workflows/deploy-cloudflare.yml` (también se puede lanzar
+a mano con `workflow_dispatch`). Así un push con tests rojos nunca se publica:
 
 1. Publica `website/public` en Cloudflare Pages.
 2. Sube el backend a Railway con la CLI (`railway up website/backend`), que crea un despliegue
    nuevo desde el commit actual y espera a que la construcción termine.
-3. Comprueba que las nueve páginas respondan `200`, que `robots.txt` y el `404` existan y que
+3. Comprueba que las ocho páginas respondan `200` en su ruta limpia (sin `.html`), que
+   `robots.txt` y el `404` existan y que
    la API publicada sea compatible con el backend actual.
 
 Si alguna comprobación falla, el flujo queda en rojo.
@@ -283,6 +300,99 @@ Pages también define `API_ORIGIN` hacia la API. El chequeo de vida es `GET /api
 **Cabeceras de seguridad**: al publicarse como archivos estáticos, `helmet` deja de afectar
 al frontend, por eso `website/public/_headers` replica la misma política. Es el único punto
 que hay que mantener sincronizado con el backend.
+
+### Respaldos y durabilidad
+
+La descarga de Configuración → Respaldos entrega una instantánea consistente (`VACUUM INTO`
++ `integrity_check`), pero vive en el mismo volumen que la base. La durabilidad se cubre en
+dos capas:
+
+1. **Línea base (recomendada):** backups automáticos del volumen de Railway. Se activan en
+   el panel del servicio (Settings → Backups) en modalidad diaria, semanal y mensual. No
+   requieren variables ni credenciales; Railway los factura como almacenamiento incremental,
+   un importe marginal para una base de pocos MB.
+   **Requiere un plan de pago que los incluya:** el plan Free de Railway no ofrece backups
+   del volumen (`maxBackupsCount = 0`). Mientras el servicio esté en Free, la copia
+   disponible es la descarga manual de Configuración → Respaldos (y la copia externa en R2
+   si se activa).
+2. **Opcional:** copia fuera de Railway en **Cloudflare R2**, programada por el propio
+   backend. Está implementada pero **no activada**; se deja documentada como pendiente.
+   Sin esta capa la aplicación funciona igual: no es un requisito para el uso diario.
+
+La copia externa en R2, cuando se active, usará esta configuración:
+
+| Dato | Valor previsto |
+|---|---|
+| Bucket | `labcontrol-backups` (privado, sin acceso público) |
+| Prefijo | `labcontrol/` |
+| Frecuencia | diaria, **02:15** (`America/Santiago`) |
+| Retención local | 30 días, conservando siempre las últimas 7 copias |
+| Retención en R2 | regla de ciclo de vida de 90 días |
+| Verificación | `PRAGMA integrity_check` antes de subir y hash SHA-256 en los metadatos |
+
+Para activar la capa opcional, configura estas variables en el servicio del backend (nunca en
+el repositorio):
+
+```text
+LC_BACKUP_AUTO=1
+LC_BACKUP_HORA=02:15
+LC_BACKUP_TZ=America/Santiago
+LC_BACKUP_S3_URI=s3://labcontrol-backups/labcontrol/
+LC_BACKUP_S3_ENDPOINT=https://<CUENTA>.r2.cloudflarestorage.com
+LC_BACKUP_S3_REGION=auto
+AWS_ACCESS_KEY_ID=<token de R2 con Object Read & Write>
+AWS_SECRET_ACCESS_KEY=<secreto del token>
+```
+
+Con `LC_BACKUP_AUTO=1`, el servidor revisa cada 5 minutos y ejecuta un único respaldo al día.
+Si el proceso estaba caído a las 02:15, recupera la copia en la primera revisión después del
+arranque; la marca `.ultimo-respaldo` evita repetirla el mismo día. Si la subida falla, deja
+`.ultimo-intento` y no reintenta hasta el día siguiente; `npm run respaldo` fuerza un intento
+manual. El script usa el SDK de AWS incluido en `package.json`, así que **no hace falta
+instalar `awscli`** en la imagen.
+
+Puesta en marcha de R2 (opcional, una sola vez):
+
+1. En Cloudflare → R2, crea el bucket privado `labcontrol-backups`.
+2. En R2 → Manage R2 API Tokens, crea un token con **Object Read & Write** limitado a ese
+   bucket y guarda el Access Key ID y el Secret Access Key.
+3. Añade una regla de ciclo de vida que elimine los objetos después de 90 días.
+4. Carga las variables del bloque anterior en Railway y redespliega el backend.
+5. Fuerza una copia con `npm run respaldo` o espera a las 02:15; revisa que el objeto aparezca
+   en `labcontrol-backups/labcontrol/`.
+
+Para probar o forzar una copia:
+
+```bash
+cd website/backend
+npm run respaldo
+```
+
+El script (`website/backend/scripts/respaldo-externo.mjs`) crea la instantánea en
+`LC_BACKUP_DIR` (por defecto `$LC_DB_DIR/backups`), verifica su integridad, la copia a
+`LC_BACKUP_COPIAR_A` si está definido y/o la sube a R2. La retención local se controla con
+`LC_BACKUP_RETENCION_DIAS` y `LC_BACKUP_CONSERVAR`.
+
+Si prefieres un servidor propio en lugar de Railway, el mismo script sirve desde cron:
+
+```cron
+15 2 * * * cd /ruta/LabControl/website/backend && LC_BACKUP_AUTO=0 npm run respaldo >> /var/log/labcontrol-respaldo.log 2>&1
+```
+
+**Restauración desde un backup del volumen**: en Railway, servicio → Settings → Backups →
+elegir el punto → Restore, revisar el volumen restaurado y confirmar Deploy. Antes de restaurar,
+descarga el estado actual con `railway volume files download` (o Configuración → Respaldos) y
+valida la copia elegida con `PRAGMA integrity_check`. Después del redespliegue, vuelve a
+ejecutar `PRAGMA integrity_check` y comprueba usuarios, agenda y equipos.
+
+**Restauración desde R2 o una copia manual**: descarga la copia, valida `PRAGMA integrity_check`,
+detén el backend y reemplaza `labcontrol.db` en el volumen. Haz este ensayo al menos una vez al
+trimestre en un entorno de staging, no en producción.
+
+Los backups del volumen cubren el contenido del volumen y permiten recuperarse de un borrado
+accidental de datos o de un despliegue defectuoso, pero no del borrado del volumen, del
+proyecto o de la cuenta de Railway; para eso sirve la copia externa en R2. Restaurar un punto
+descarta los backups más nuevos creados después de ese punto.
 
 ---
 
