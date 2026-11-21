@@ -160,7 +160,8 @@ Si el hosting no copia `public/` junto a `backend/`, se indica la ruta con `LC_P
 │   │   ├── totp.mjs                    Códigos TOTP de la verificación en dos pasos
 │   │   ├── tests/                      Pruebas de backend (Jest + Supertest)
 │   │   └── scripts/                    Utilidades de línea de comandos
-│   └── config/                         Calidad, pruebas de interfaz y utilidades
+│   ├── config/                         Calidad, pruebas de interfaz y utilidades
+│   └── legacy-redirect/                Redirección del host histórico al actual
 └── PENDIENTES.txt                      Pendientes y limitaciones conocidas
 ```
 
@@ -168,7 +169,8 @@ Los nombres `.html` del árbol son archivos en disco, **no URLs públicas**. El 
 se navega con rutas limpias (`/login`, `/equipos`, `/configuración`…); Cloudflare
 Pages sirve cada archivo en su ruta sin extensión y `_redirects` redirige 308
 cualquier enlace antiguo con `.html` a la ruta limpia. El servidor local hace lo
-mismo con `extensions: ["html"]`.
+mismo con `extensions: ["html"]`. La URL histórica `insuco-labcontrol.pages.dev`
+ya no sirve el sitio: redirige 301 a `https://labcontrol-ym.pages.dev`.
 
 ---
 
