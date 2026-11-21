@@ -59,6 +59,7 @@ jobs:
       # copian los dos que necesita la Function de /api: el dominio público de
       # Railway (API_ORIGIN) y LC_PROXY_SECRET, que debe coincidir con el backend.
       - name: Preparar el proyecto de Pages y sus secretos
+        id: pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
@@ -97,7 +98,19 @@ jobs:
             else empty end')"
 
           [ -n "$api_host" ] || { echo "::error::No se encontró el dominio público de la API en Railway."; exit 1; }
-          [ -n "$proxy" ] || { echo "::error::No se pudo leer LC_PROXY_SECRET de Railway; configúralo a mano en Pages."; exit 1; }
+
+          # Railway puede guardar LC_PROXY_SECRET como variable sellada: entonces
+          # no se puede leer, pero sí sobrescribir. Se rota una sola vez y se
+          # guarda en ambos sitios; el paso LC_PUBLIC_URL fuerza el redeploy de
+          # la API cuando esto pasa.
+          if [ -z "$proxy" ]; then
+            echo "LC_PROXY_SECRET está sellado: se genera uno nuevo para Railway y Pages."
+            proxy="$(openssl rand -hex 32)"
+            railway variable set "LC_PROXY_SECRET=$proxy" \
+              --project "$PROYECTO_ID" --environment "$ENVIRONMENT_ID" --service "$SERVICE_ID" \
+              --skip-deploys --json >/dev/null
+            echo "rotado=true" >> "$GITHUB_OUTPUT"
+          fi
 
           jq -n --arg origin "https://$api_host" --arg secret "$proxy" \
             '{API_ORIGIN: $origin, LC_PROXY_SECRET: $secret}' > /tmp/lc-pages-secrets.json
@@ -157,6 +170,7 @@ jobs:
           SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
           ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
           API_CAMBIO: ${{ steps.api.outputs.changed }}
+          SECRETO_ROTADO: ${{ steps.pages.outputs.rotado }}
           EVENTO: ${{ github.event_name }}
         run: |
           set -euo pipefail
@@ -166,7 +180,7 @@ jobs:
           fi
 
           opciones=()
-          if [ "$EVENTO" = "workflow_dispatch" ] || [ "$API_CAMBIO" = "true" ]; then
+          if [ "$EVENTO" = "workflow_dispatch" ] || [ "$API_CAMBIO" = "true" ] || [ "$SECRETO_ROTADO" = "true" ]; then
             # El siguiente paso ya despliega la API con la variable nueva.
             opciones+=(--skip-deploys)
           fi
@@ -182,7 +196,7 @@ jobs:
       # actual con la CLI (`railway up`), que crea un despliegue nuevo desde este
       # commit. Asi la API queda al dia con cada push, sin tocar el panel.
       - name: Desplegar la API en Railway
-        if: github.event_name == 'workflow_dispatch' || steps.api.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.api.outputs.changed == 'true' || steps.pages.outputs.rotado == 'true'
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           PROYECTO_ID: ${{ vars.RAILWAY_PROJECT_ID }}
