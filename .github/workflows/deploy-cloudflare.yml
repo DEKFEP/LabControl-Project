@@ -41,7 +41,7 @@ jobs:
         # `fetch-depth: 1` de GitHub Actions ese commit no existe todavia.
         # En workflow_run hay que fijar el SHA: el GITHUB_SHA del evento apunta
         # a la cabeza de la rama, que puede ya no ser la que paso el CI.
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.COMMIT }}
           fetch-depth: 0
