@@ -17,22 +17,13 @@
 <link rel="stylesheet" href="css/style.css?v=4.9.0" />
 <script src="js/theme.js?v=4.9.0"></script>
 </head>
-<body class="login-body">
+<body class="login-body" style="padding-top:20px">
 <a class="skip-nav" href="#main-content">Saltar al contenido</a>
-<header class="app-brand"><a href="login" aria-label="LabControl, inicio"><img class="app-brand__icon" src="img/labcontrol-icon.png" alt="" width="32" height="32" />LabControl</a></header>
-
 <main class="main-content" id="main-content" role="main" tabindex="-1">
 <div class="login-card">
-  <div class="login-brand">
-    <div>
-      <div class="login-brand__name">LabControl</div>
-      <div class="login-brand__sub">Instituto Superior de Comercio</div>
-    </div>
-  </div>
-
   <!-- ===== Vista 1: Iniciar sesión ===== -->
   <section id="vista-login" aria-label="Iniciar sesión">
-    <h2 class="login-title">Iniciar sesión</h2>
+    <h1 class="login-title">Iniciar sesión</h1>
     <p class="login-desc">Ingresa con tu cuenta institucional</p>
 
     <!-- novalidate: el paso 2 oculta sus campos required (la validación se hace en login.js) -->
@@ -89,8 +80,8 @@
   </section>
 
   <!-- ===== Vista 2: Crear cuenta ===== -->
-  <section id="vista-registrar" class="login-alt" style="display:none" aria-label="Crear cuenta">
-    <h2 class="login-title">Crear cuenta</h2>
+  <section id="vista-registrar" class="login-alt" style="display:none" aria-label="Registrar">
+    <h1 class="login-title">Registrar</h1>
     <p class="login-desc">Regístrate con tus datos institucionales</p>
 
     <form id="registro-form" novalidate>
