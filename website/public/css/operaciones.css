@@ -2,19 +2,17 @@
 .operaciones {
   color: var(--color-text);
 }
-.operaciones h1, .operaciones h2, .operaciones h3, .operaciones h4 { color: var(--color-text); margin: 0; }
-.operaciones h1 { font-size: clamp(2rem, 4.3vw, 3.3rem); }
-.operaciones h2 { font-size: 1.25rem; margin-bottom: 14px; }
+.operaciones h2, .operaciones h3, .operaciones h4 { color: var(--color-text); margin: 0; }
+.operaciones h2 { font-size: 1.02rem; margin-bottom: 14px; }
 .operaciones h3 { font-size: 1rem; }
-.operaciones .page-header { align-items: center; margin-bottom: 18px; }
 .operaciones .page-header p, .dia h3 { text-transform: capitalize; }
 .operaciones .page-header p, .control-hoja small { color: var(--color-link); }
-.indicadores { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin: 0 0 26px; }
+.indicadores { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 15px; margin: 0 0 24px; }
 .indicadores > div, .bloque-lab, .dia, .tarjeta, .estado-tabla {
   border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface);
 }
 .indicadores > div {
-  position: relative; display: flex; flex-direction: column-reverse; gap: 2px; padding: 18px 20px;
+  position: relative; display: flex; flex-direction: column-reverse; gap: 2px; padding: 19px;
   background: linear-gradient(110deg, var(--surface-deep), var(--color-surface));
 }
 .indicadores > div:first-child { background: linear-gradient(110deg, var(--soft-primary), var(--color-surface)); }
@@ -23,8 +21,8 @@
   width: 38px; height: 48px; opacity: .45;
   background: radial-gradient(circle, var(--color-primary) 2px, transparent 3px) 0 0 / 10px 10px;
 }
-.indicadores dt, .filtros label, .operaciones dl dt { color: var(--color-text-muted); font-size: .82rem; }
-.indicadores dd { margin: 4px 0 0; font-size: clamp(1.65rem, 3vw, 2.45rem); font-variant-numeric: tabular-nums; font-weight: 750; line-height: 1.2; }
+.filtros label, .operaciones details dt { color: var(--color-text-muted); font-size: .82rem; }
+.indicadores dd { margin: 0; font-variant-numeric: tabular-nums; }
 .fecha-cabecera, .nombre-lab, .titulo-estado { display: flex; align-items: center; gap: 10px; }
 .operaciones .fecha-cabecera { text-transform: uppercase; letter-spacing: .07em; font: .77rem/1.6 monospace; color: var(--color-text-muted); }
 .fecha-cabecera svg.lucide { color: var(--color-link); width: 16px; }
@@ -33,7 +31,6 @@
 .titulo-estado span { color: var(--color-text-muted); font-size: .84rem; }
 .estado-tabla .btn { color: var(--color-link); padding: 6px; border-color: transparent; background: transparent; }
 .estado-tabla th { background: var(--surface-deep); color: var(--color-text-muted); }
-.estado-tabla td { padding-block: 14px; }
 .nombre-lab svg.lucide { flex: none; width: 32px; height: 32px; padding: 7px; color: var(--color-link); border-radius: 8px; background: var(--soft-primary); }
 .estado-tabla .badge--ocupado, .tarjeta .badge--ocupado { background: light-dark(#fff2da, #493922); color: light-dark(#754600, #ffce8c); }
 .filtros { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 0 0 16px; }
