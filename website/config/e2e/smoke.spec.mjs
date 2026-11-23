@@ -446,6 +446,16 @@ test("auditoría: el admin ve los registros de actividad y filtra", async ({ pag
 test("reservas por día y por semana según la fecha elegida", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/disponibilidad");
+  const calendario = page.getByRole("table", {name: "Reservas semanales por laboratorio"});
+  await expect(calendario).toBeVisible();
+  await expect(calendario.locator("tbody tr")).toHaveCount(await page.locator("#res-lab option").count());
+  await page.fill("#fecha-agenda", "2027-01-01");
+  await expect(calendario.locator("time").first()).toHaveAttribute("datetime", "2026-12-28");
+  await page.getByRole("button", {name: "Semana siguiente"}).click();
+  await expect(calendario.locator("time").last()).toHaveAttribute("datetime", "2027-01-10");
+  await page.getByRole("button", {name: "Semana anterior"}).click();
+  await expect(page.locator("#fecha-agenda")).toHaveValue("2027-01-01");
+  await page.setViewportSize({width: 390, height: 844});
   await expect(page.locator("#agenda .dia")).toHaveCount(1);
   await page.click('[data-modo="semana"]');
   await expect(page.locator("#agenda .dia")).toHaveCount(7);

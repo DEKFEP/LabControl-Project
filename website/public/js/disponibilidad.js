@@ -9,7 +9,8 @@ const fechaLarga = d => d.toLocaleDateString("es-CL", {weekday: "long", day: "nu
 const hoy = () => fechaLocal(new Date());
 let labs = [], agenda = [], usuarios = [];
 let labSeleccionado;
-let modo = "dia";
+const escritorio = matchMedia("(min-width: 861px)");
+let modo = escritorio.matches ? "semana" : "dia";
 $("fecha-agenda").value = hoy();
 $("fecha-hoy").textContent = fechaLarga(new Date());
 
@@ -58,28 +59,74 @@ $("btn-guardar-estado").onclick = async e => {
   finally { btn.disabled = false; }
 };
 
+function puedeCancelar(r) {
+  return sesion && (AUTH.esAdmin() || sesion.id === r.usuarioId);
+}
+
 function reserva(r) {
   const lab = labs.find(l => l.id === r.labId);
   const usuario = usuarios.find(u => u.id === r.usuarioId);
   return `<article class="reserva"><strong>${esc(r.horaInicio || "00:00")} – ${esc(r.horaFin || "23:59")}</strong>
     <div><h4>${esc(lab?.nombre)}</h4><p>${esc(r.motivo)}</p><small>${esc(usuario ? usuario.nombre + " " + usuario.apellido : r.usuarioId)} · ${esc(r.estado || "pendiente")}</small></div>
-    ${sesion && (AUTH.esAdmin() || sesion.id === r.usuarioId) ? `<button class="btn btn--sm" data-cancelar="${esc(r.id)}">Cancelar</button>` : ""}</article>`;
+    ${puedeCancelar(r) ? `<button class="btn btn--sm" data-cancelar="${esc(r.id)}">Cancelar</button>` : ""}</article>`;
+}
+
+function fichaCalendario(r) {
+  const clase = "semana-chip" + (r.estado === "pendiente" ? " semana-chip--pendiente" : "");
+  const contenido = `${esc(r.horaInicio || "00:00")}–${esc(r.horaFin || "23:59")}<span>${esc(r.motivo)}</span>`;
+  return puedeCancelar(r)
+    ? `<button type="button" class="${clase}" data-cancelar="${esc(r.id)}" title="Cancelar reserva">${contenido}</button>`
+    : `<div class="${clase} semana-chip--ajeno">${contenido}</div>`;
+}
+
+function calendario(dias) {
+  const actual = hoy();
+  const encabezados = dias.map(({dia, fecha}) => `<th scope="col" class="${fecha === actual ? "semana-th--hoy" : ""}">
+    <span class="semana-dia">${dia.toLocaleDateString("es-CL", {weekday: "long"})}</span>
+    <time class="semana-fecha" datetime="${fecha}">${dia.getDate()}</time></th>`);
+  const filas = labs.map(lab => {
+    const celdas = dias.map(({fecha, reservas}) => `<td class="${fecha === actual ? "semana-td--hoy" : ""}">
+      ${reservas.filter(r => r.labId === lab.id).map(fichaCalendario).join("")}</td>`);
+    return `<tr><th scope="row" class="semana-lab">${esc(lab.nombre)}</th>${celdas.join("")}</tr>`;
+  });
+  return `<div class="table-wrap"><table class="semana-tabla" aria-label="Reservas semanales por laboratorio">
+    <thead><tr><th scope="col">Laboratorio</th>${encabezados.join("")}</tr></thead><tbody>${filas.join("")}</tbody></table></div>`;
 }
 
 function renderAgenda() {
   const dia = new Date(($("fecha-agenda").value || hoy()) + "T12:00:00");
   const semanal = modo === "semana";
+  const mostrarCalendario = semanal && escritorio.matches;
+  $("nav-semana").hidden = !mostrarCalendario;
   if (semanal) dia.setDate(dia.getDate() - (dia.getDay() + 6) % 7);
-  const grupos = [];
+  const dias = [];
   for (let i = 0; i < (semanal ? 7 : 1); i++) {
     const fecha = fechaLocal(dia);
     const reservas = agenda.filter(r => r.fecha === fecha).sort((a,b) => (a.horaInicio || "").localeCompare(b.horaInicio || ""));
-    grupos.push(`<section class="dia"><h3>${fechaLarga(dia)}</h3>${reservas.map(reserva).join("") || '<p class="vacio">Sin reservas para este día</p>'}</section>`);
+    dias.push({dia: new Date(dia), fecha, reservas});
     dia.setDate(dia.getDate() + 1);
   }
-  $("agenda").innerHTML = grupos.join("");
+  if (mostrarCalendario) {
+    const formato = new Intl.DateTimeFormat("es-CL", {day: "numeric", month: "short", year: "numeric"});
+    $("semana-label").textContent = formato.formatRange(dias[0].dia, dias[6].dia);
+    $("agenda").innerHTML = calendario(dias);
+  } else {
+    $("agenda").innerHTML = dias.map(({dia, reservas}) => `<section class="dia"><h3>${fechaLarga(dia)}</h3>${reservas.map(reserva).join("") || '<p class="vacio">Sin reservas para este día</p>'}</section>`).join("");
+  }
   document.querySelectorAll("[data-modo]").forEach(btn => btn.setAttribute("aria-pressed", String(btn.dataset.modo === modo)));
 }
+escritorio.addEventListener("change", () => {
+  modo = escritorio.matches ? "semana" : "dia";
+  renderAgenda();
+});
+$("nav-semana").onclick = e => {
+  const boton = e.target.closest("[data-semanas]");
+  if (!boton) return;
+  const fecha = new Date(($("fecha-agenda").value || hoy()) + "T12:00:00");
+  fecha.setDate(fecha.getDate() + 7 * Number(boton.dataset.semanas));
+  $("fecha-agenda").value = fechaLocal(fecha);
+  renderAgenda();
+};
 document.querySelectorAll("[data-modo]").forEach(btn => { btn.onclick = () => { modo = btn.dataset.modo; renderAgenda(); }; });
 $("fecha-agenda").onchange = () => { if (!$("fecha-agenda").value) $("fecha-agenda").value = hoy(); renderAgenda(); };
 $("hoy").onclick = () => { $("fecha-agenda").value = hoy(); renderAgenda(); };
@@ -116,7 +163,7 @@ $("form-reserva").onsubmit = async e => {
     const nueva = await crearReserva(datos);
     agenda.push(nueva);
     $("fecha-agenda").value = datos.fecha;
-    modo = "dia";
+    if (!escritorio.matches) modo = "dia";
     renderAgenda();
     indicadores();
     $("btn-cerrar-reserva").click();
