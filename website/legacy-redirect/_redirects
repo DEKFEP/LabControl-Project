@@ -1,5 +1,5 @@
 # La URL histórica insuco-labcontrol.pages.dev ya no sirve el sitio: solo
 # redirige al nombre público actual. Se despliega como proyecto de Pages
 # independiente para no afectar a las redirecciones .html del sitio nuevo.
-/ https://labcontrol-ym.pages.dev/ 301!
-/* https://labcontrol-ym.pages.dev/:splat 301!
+/ https://labcontrol-ym.pages.dev/ 301
+/* https://labcontrol-ym.pages.dev/:splat 301
