@@ -64,6 +64,13 @@
         <label>Elegir fecha<input class="form-input" type="date" id="fecha-agenda" /></label>
         <button class="btn" id="hoy">Hoy</button>
       </div>
+      <div id="nav-semana" hidden>
+        <div class="semana-nav">
+          <button type="button" class="btn btn--sm" data-semanas="-1">Semana anterior</button>
+          <span class="semana-label" id="semana-label" aria-live="polite"></span>
+          <button type="button" class="btn btn--sm" data-semanas="1">Semana siguiente</button>
+        </div>
+      </div>
       <div id="agenda"></div>
     </section>
   </main>
@@ -136,6 +143,6 @@
 <script type="module" src="js/data.js?v=4.9.0"></script>
 <script src="js/vendor/lucide.min.js?v=4.9.0"></script>
 <script type="module" src="js/app.js?v=4.9.0"></script>
-<script type="module" src="js/disponibilidad.js?v=4.9.1"></script>
+<script type="module" src="js/disponibilidad.js?v=4.9.2"></script>
 </body>
 </html>
