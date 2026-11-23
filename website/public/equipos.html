@@ -15,7 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <title>Equipos · LabControl</title>
 <link rel="stylesheet" href="css/style.css?v=4.9.0" />
-<link rel="stylesheet" href="css/operaciones.css" />
+<link rel="stylesheet" href="css/operaciones.css?v=2" />
 <script src="js/theme.js?v=4.9.0"></script>
 </head>
 <body>
@@ -34,7 +34,7 @@
     </div>
   </aside>
 
-  <main data-theme="oscuro" class="main-content operaciones" id="main-content" role="main" tabindex="-1">
+  <main class="main-content operaciones" id="main-content" role="main" tabindex="-1">
     <header class="page-header"><h1>Equipos</h1></header>
     <dl class="indicadores" id="eq-stats"><div><dt>Equipos</dt><dd id="total">—</dd></div><div><dt>Activos</dt><dd id="activos">—</dd></div><div><dt>Otros estados</dt><dd id="otros">—</dd></div></dl>
     <section aria-labelledby="inventario-titulo">
@@ -56,7 +56,7 @@
   </main>
 </div>
 
-<dialog class="control-capa operaciones" data-theme="oscuro" id="seccion-remoto" aria-labelledby="rem-nombre">
+<dialog class="control-capa operaciones" id="seccion-remoto" aria-labelledby="rem-nombre">
   <div class="control-hoja">
     <header id="control-cabecera">
       <span class="tirador" aria-hidden="true"></span>
@@ -78,7 +78,7 @@
     </div>
   </div>
 </dialog>
-<div class="modal-overlay operaciones" data-theme="oscuro" id="acciones-lab" style="display:none" role="dialog" aria-modal="true" aria-labelledby="acciones-titulo">
+<div class="modal-overlay operaciones" id="acciones-lab" style="display:none" role="dialog" aria-modal="true" aria-labelledby="acciones-titulo">
   <div class="modal"><div class="modal__header"><h2 id="acciones-titulo">Acciones del laboratorio</h2><button class="modal__close" aria-label="Cerrar">×</button></div>
     <div class="modal__body"><p id="acciones-detalle"></p></div>
     <div class="modal__footer"><button class="btn btn--danger" id="apagar-lab">Apagar todos los equipos</button></div>
