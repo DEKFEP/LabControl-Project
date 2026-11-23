@@ -361,3 +361,23 @@ test("acciones de laboratorio confirman el alcance del apagado simulado", async 
   await expect(lab.locator(".equipo .badge").first()).toHaveText("Apagado");
   await expect(bloques.nth(1).locator(".equipo .badge").first()).toHaveText("Activo");
 });
+
+test("Disponibilidad y Equipos heredan el tema de la aplicación en sus vistas y diálogos", async ({page}) => {
+  await entrar(page);
+  for (const tema of ["oscuro", "claro"]) {
+    await page.evaluate(t => localStorage.setItem("lc_tema", t), tema);
+    for (const ruta of ["disponibilidad", "equipos"]) {
+      await page.goto("/" + ruta);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", tema);
+      const esquema = tema === "claro" ? "light" : "dark";
+      for (const region of await page.locator(".operaciones").all()) {
+        await expect(region).toHaveCSS("color-scheme", esquema);
+      }
+      const abrir = ruta === "equipos" ? "[data-control]" : "#btn-nueva-reserva";
+      await page.locator(abrir).first().click();
+      const superficie = page.locator(ruta === "equipos" ? ".control-hoja" : "#modal-reserva .modal");
+      await expect(superficie).toBeVisible();
+      await expect(superficie).toHaveCSS("background-color", tema === "claro" ? "rgb(255, 255, 255)" : "rgb(31, 31, 31)");
+    }
+  }
+});
