@@ -1,155 +1,221 @@
-/* Imports (ES modules) */
 import { AUTH, ESTADOS_EQUIPO, cargarEquipos, cargarLaboratorios } from "./data.js";
-import { esc, getQueryParam, renderSidebar, showToast } from "./app.js";
+import { abrirModal, esc, getQueryParam, renderSidebar, showToast } from "./app.js";
 
+await renderSidebar("equipos");
+const $ = id => document.getElementById(id);
+const control = $("seccion-remoto");
+const permitido = AUTH.puedeControlRemoto();
+const limites = new Map();
+const resultados = new Map();
+let laboratorios = [];
+let equipos = [];
+let seleccionado, origen, laboratorioAccion;
 
-  await renderSidebar("equipos");
+function estado(eq) {
+  if (eq.estado === "bloqueado") return {label: "Bloqueado", clase: "badge--mantencion"};
+  return ESTADOS_EQUIPO[eq.estado] ?? {label: eq.estado, clase: "badge--muted"};
+}
 
-  const puedeTecnico = AUTH.puedeVerTecnico();
-  const labFiltroInicial = getQueryParam("lab");
+function etiqueta(eq) {
+  const {clase, label} = estado(eq);
+  return `<span class="badge ${clase}">${esc(label)}</span>`;
+}
 
-  let equiposCache = [];
-  let labsCache = [];
-  let eqSeleccionado = null;
+function actualizarTotales() {
+  const activos = equipos.filter(eq => eq.estado === "activo").length;
+  $("total").textContent = equipos.length;
+  $("activos").textContent = activos;
+  $("otros").textContent = equipos.length - activos;
+}
 
-  if (!puedeTecnico) {
-    document.getElementById("aviso-sin-permiso").style.display = "flex";
-    document.getElementById("seccion-remoto").style.display = "none";
-    document.getElementById("th-tecnico").textContent = "Hardware";
-    document.getElementById("th-red").textContent = "Red";
+function fila(eq) {
+  return `<li class="equipo"><div><div class="linea"><strong>${esc(eq.nombre)}</strong>${etiqueta(eq)}</div>
+    <p>${esc(eq.tipo)} · ${esc(eq.so || "Sistema sin especificar")}</p></div>
+    ${permitido ? `<button class="btn btn--sm" data-control="${esc(eq.id)}">Controlar</button>` : ""}</li>`;
+}
+
+function coincidencias(lista, lab, q) {
+  return lista.filter(eq => [eq.nombre, eq.id, eq.tipo, lab.nombre].some(v => String(v).toLowerCase().includes(q)));
+}
+
+function busqueda() {
+  return $("filtro-busq-eq").value.trim().toLowerCase();
+}
+
+function inventario() {
+  const filtro = $("filtro-lab").value;
+  const q = busqueda();
+  const bloques = [];
+  for (const lab of laboratorios) {
+    if (filtro && filtro !== String(lab.id)) continue;
+    const todos = equipos.filter(eq => eq.labId === lab.id);
+    const encontrados = coincidencias(todos, lab, q);
+    if (q && !encontrados.length) continue;
+    const limite = limites.get(lab.id) ?? 5;
+    bloques.push(`<article class="bloque-lab"><header><div><h3>${esc(lab.nombre)}</h3><p>${esc(lab.sala)} · ${todos.length} equipos</p></div>
+      ${permitido ? `<button class="btn btn--sm" data-acciones="${esc(lab.id)}">Acciones del laboratorio</button>` : ""}</header>
+      <ul>${encontrados.slice(0, limite).map(fila).join("")}</ul>
+      ${encontrados.length > limite ? `<button class="ver-mas" data-mas="${esc(lab.id)}">Ver más equipos</button>` : ""}</article>`);
   }
+  $("inventario").innerHTML = bloques.join("") || '<p class="vacio">Sin equipos que coincidan con la búsqueda.</p>';
+}
 
-  Promise.all([cargarLaboratorios(), cargarEquipos()]).then(([labs, equipos]) => {
-    labsCache = labs;
-    equiposCache = equipos;
+function comandos(eq) {
+  const encendido = ["activo", "bloqueado"].includes(eq.estado);
+  return {encender: eq.estado === "apagado", apagar: encendido, reiniciar: encendido, bloquear: encendido, captura: encendido};
+}
 
-    const sel = document.getElementById("filtro-lab");
-    sel.innerHTML =
-      '<option value="">Todos los laboratorios</option>' +
-      labs.map((l) => `<option value="${esc(l.id)}">${esc(l.nombre)}</option>`).join("");
-    if (labFiltroInicial) sel.value = labFiltroInicial;
-
-    renderEqStats();
-    renderTabla();
-  }).catch(() => showToast("No se pudieron cargar los equipos.", "error"));
-
-  ["filtro-lab", "filtro-busq-eq"].forEach((id) =>
-    document.getElementById(id).addEventListener("input", () => { renderEqStats(); renderTabla(); })
-  );
-
-  function equiposFiltrados() {
-    const labId = document.getElementById("filtro-lab").value;
-    const q = document.getElementById("filtro-busq-eq").value.toLowerCase();
-    return equiposCache.filter((e) => {
-      const lab = labsCache.find((l) => l.id === e.labId);
-      return (!labId || String(e.labId) === labId) &&
-        (!q || `${e.nombre} ${e.tipo} ${lab ? lab.nombre : ""}`.toLowerCase().includes(q));
-    });
+function actualizarPanel() {
+  const eq = seleccionado;
+  $("rem-badge").innerHTML = etiqueta(eq);
+  const disponibles = comandos(eq);
+  for (const btn of control.querySelectorAll("[data-cmd]")) {
+    btn.disabled = !disponibles[btn.dataset.cmd];
+    if (btn.dataset.cmd === "bloquear") btn.textContent = eq.estado === "bloqueado" ? "Desbloquear" : "Bloquear";
   }
+  $("remote-log").textContent = resultados.get(eq.id) ?? `Sesión de control iniciada sobre ${eq.nombre}.`;
+}
 
-  function renderEqStats() {
-    const lista = equiposFiltrados();
-    const activos = lista.filter((e) => e.estado === "activo").length;
-    const enFalla = lista.filter((e) => e.estado === "falla").length;
-    const enMant  = lista.filter((e) => e.estado === "mantencion").length;
-    document.getElementById("eq-stats").innerHTML = `
-      <div class="card stat-card"><div><div class="stat-card__label">Equipos mostrados</div><div class="stat-card__value">${lista.length}</div></div><div class="stat-card__icon stat-card__icon--primary"><i data-lucide="monitor"></i></div></div>
-      <div class="card stat-card"><div><div class="stat-card__label">Activos</div><div class="stat-card__value">${activos}</div></div><div class="stat-card__icon stat-card__icon--success"><i data-lucide="circle-check"></i></div></div>
-      <div class="card stat-card"><div><div class="stat-card__label">En falla</div><div class="stat-card__value">${enFalla}</div></div><div class="stat-card__icon stat-card__icon--danger"><i data-lucide="triangle-alert"></i></div></div>
-      <div class="card stat-card"><div><div class="stat-card__label">Mantención</div><div class="stat-card__value">${enMant}</div></div><div class="stat-card__icon stat-card__icon--warning"><i data-lucide="wrench"></i></div></div>
-    `;
+function abrirControl(btn) {
+  seleccionado = equipos.find(eq => String(eq.id) === btn.dataset.control);
+  if (!permitido || !seleccionado) return;
+  origen = btn;
+  const eq = seleccionado;
+  $("rem-nombre").textContent = `Control de ${eq.nombre}`;
+  $("rem-detalle").textContent = laboratorios.find(lab => lab.id === eq.labId)?.nombre;
+  $("tecnico").open = false;
+  $("tecnico").querySelector("dl").innerHTML = Object.entries({
+    IP: eq.ip, MAC: eq.mac, Procesador: eq.procesador, Memoria: eq.ram, Almacenamiento: eq.almacenamiento
+  }).map(([nombre, valor]) => `<div><dt>${nombre}</dt><dd>${esc(valor || "—")}</dd></div>`).join("");
+  actualizarPanel();
+  control.showModal();
+  $("control-cabecera").parentElement.scrollTop = 0;
+}
+
+$("inventario").addEventListener("click", e => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  if (btn.hasAttribute("data-control")) return abrirControl(btn);
+  if (btn.hasAttribute("data-mas")) {
+    const id = Number(btn.dataset.mas);
+    const lab = laboratorios.find(l => l.id === id);
+    const encontrados = coincidencias(equipos.filter(eq => eq.labId === id), lab, busqueda());
+    const desde = limites.get(id) ?? 5;
+    const hasta = desde + 5;
+    const lista = btn.closest(".bloque-lab").querySelector("ul");
+    lista.insertAdjacentHTML("beforeend", encontrados.slice(desde, hasta).map(fila).join(""));
+    limites.set(id, hasta);
+    if (hasta >= encontrados.length) btn.remove();
+    lista.children[desde]?.querySelector("button")?.focus({preventScroll: true});
+  } else if (permitido && btn.hasAttribute("data-acciones")) {
+    laboratorioAccion = laboratorios.find(lab => String(lab.id) === btn.dataset.acciones);
+    $("acciones-detalle").textContent = `${laboratorioAccion.nombre} · ${laboratorioAccion.sala} · Control simulado`;
+    abrirModal("acciones-lab");
   }
+});
 
-  function renderTabla() {
-    const tbody = document.getElementById("tabla-equipos");
-    const lista = equiposFiltrados();
-
-    if (!lista.length) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--color-text-muted);padding:24px">Sin equipos que mostrar.</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = lista.map((e) => {
-      const lab = labsCache.find((l) => l.id === e.labId);
-      const estEq = ESTADOS_EQUIPO[e.estado] ?? { label: e.estado, clase: "badge--muted" };
-      const tecnico = puedeTecnico
-        ? `<span class="tech-cell">${esc(e.procesador)}<br>${esc(e.ram)} · ${esc(e.almacenamiento)}</span>`
-        : `<span class="locked-cell"><i data-lucide="lock"></i> Restringido</span>`;
-      const red = puedeTecnico
-        ? `<span class="tech-cell">${esc(e.ip)}<br>${esc(e.mac)}</span>`
-        : `<span class="locked-cell"><i data-lucide="lock"></i> Restringido</span>`;
-      return `
-        <tr>
-          <td><strong>${esc(e.nombre)}</strong><br><span style="font-size:.74rem;color:var(--color-text-muted)">${lab ? esc(lab.nombre) : "—"}</span></td>
-          <td>${esc(e.tipo ?? "PC")}</td>
-          <td><span class="badge ${estEq.clase}">${esc(estEq.label)}</span></td>
-          <td>${tecnico}</td>
-          <td>${red}</td>
-          <td>${puedeTecnico
-            ? `<button class="btn btn--sm" data-control="${esc(e.nombre)}">Control</button>`
-            : "—"}</td>
-        </tr>
-      `;
-    }).join("");
-
-    tbody.querySelectorAll("[data-control]").forEach((btn) => {
-      btn.addEventListener("click", () => abrirControl(btn.dataset.control));
-    });
+$("apagar-lab").onclick = () => {
+  if (!permitido || !laboratorioAccion) return;
+  const afectados = equipos.filter(eq => eq.labId === laboratorioAccion.id && comandos(eq).apagar);
+  if (!confirm(`¿Apagar los ${afectados.length} equipos activos o bloqueados de ${laboratorioAccion.nombre}?`)) return;
+  for (const eq of afectados) {
+    eq.estado = "apagado";
+    resultados.set(eq.id, `Apagado simulado de ${eq.nombre} completado.`);
   }
+  $("acciones-lab").querySelector(".modal__close").click();
+  actualizarTotales();
+  inventario();
+  showToast(`Apagado simulado de ${afectados.length} equipos.`);
+};
 
-  /* ---------- Control remoto simulado ---------- */
-
-  function abrirControl(eqNombre) {
-    const eq = equiposCache.find((e) => e.nombre === eqNombre);
-    if (!eq) return;
-    eqSeleccionado = eq;
-
-    const lab = labsCache.find((l) => l.id === eq.labId);
-    const estEq = ESTADOS_EQUIPO[eq.estado] ?? { label: eq.estado, clase: "badge--muted" };
-
-    document.getElementById("seccion-remoto").style.display = "block";
-    document.getElementById("panel-remoto-vacio").style.display = "none";
-    document.getElementById("panel-remoto").style.display = "block";
-    document.getElementById("rem-nombre").textContent = eq.nombre;
-    document.getElementById("rem-detalle").textContent =
-      `${lab ? lab.nombre : "Lab"} · ${eq.so} · ${eq.ip}`;
-    document.getElementById("rem-badge").textContent = estEq.label;
-    document.getElementById("rem-badge").className = "badge " + estEq.clase;
-
-    logRemoto(`Sesión de control iniciada sobre ${eq.nombre}.`);
-    document.getElementById("panel-remoto").scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
-
-  function logRemoto(msg) {
-    const log = document.getElementById("remote-log");
-    const hora = new Date().toLocaleTimeString("es-CL", { hour12: false });
-    const line = document.createElement("div");
-    line.textContent = `[${hora}]${msg}`;
-    log.appendChild(line);
-    log.scrollTop = log.scrollHeight;
-  }
-
-  const MENSAJES_CMD = {
-    encender:     (eq) => `Comando ENCIENDER enviado a ${eq.nombre}… respuesta OK.`,
-    apagar:       (eq) => `Comando APAGAR enviado a ${eq.nombre}… apagado correcto.`,
-    reiniciar:    (eq) => `Comando REINICIAR enviado a ${eq.nombre}… reinicio en curso.`,
-    bloquear:     (eq) => `Comando BLOQUEAR enviado a ${eq.nombre}… pantalla bloqueada.`,
-    captura:      (eq) => `Captura de pantalla de ${eq.nombre} obtenida (simulada).`,
-    apagar_todos: (eq) => `Apagando TODOS los equipos del laboratorio de ${eq.nombre}…`
+control.querySelector(".comandos").onclick = e => {
+  const cmd = e.target.closest("button")?.dataset.cmd;
+  const eq = seleccionado;
+  if (!permitido || !eq || !comandos(eq)[cmd]) return;
+  const destino = {encender: "activo", apagar: "apagado", reiniciar: "activo", bloquear: eq.estado === "bloqueado" ? "activo" : "bloqueado"};
+  const mensaje = {
+    encender: "Encendido correcto", apagar: "Apagado correcto", reiniciar: "Reinicio en curso",
+    bloquear: eq.estado === "bloqueado" ? "Pantalla desbloqueada" : "Pantalla bloqueada",
+    captura: "Captura de pantalla obtenida (simulada)"
   };
+  if (destino[cmd]) eq.estado = destino[cmd];
+  resultados.set(eq.id, `[${new Date().toLocaleTimeString("es-CL")}] ${eq.nombre} · ${mensaje[cmd]}.`);
+  origen.closest(".equipo").querySelector(".badge").outerHTML = etiqueta(eq);
+  actualizarTotales();
+  actualizarPanel();
+};
 
-  if (puedeTecnico) {
-    document.querySelectorAll("[data-cmd]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (!eqSeleccionado) return;
-        const cmd = btn.dataset.cmd;
-        logRemoto(MENSAJES_CMD[cmd](eqSeleccionado));
-        showToast(`Comando ejecutado: ${cmd.replaceAll("_", " ")}`);
-      });
-    });
-
-    // Abrir panel automáticamente si viene ?lab=N&equipo=ID (futuro)
-    if (getQueryParam("lab")) {
-      document.getElementById("seccion-remoto").style.display = "block";
-    }
+$("salir-control").onclick = () => control.close();
+let fondoInicio = false;
+let fondoFin = false;
+control.onpointerdown = e => { fondoInicio = e.target === control; fondoFin = false; };
+control.onpointerup = e => { fondoFin = e.target === control && document.elementFromPoint(e.clientX, e.clientY) === control; };
+control.onclick = e => {
+  if (e.target === control && fondoInicio && fondoFin) control.close();
+};
+const cabecera = $("control-cabecera");
+const hoja = cabecera.parentElement;
+let gesto;
+cabecera.onpointerdown = e => {
+  if (!matchMedia("(max-width: 860px)").matches || !e.isPrimary || e.button !== 0) return;
+  gesto = {id: e.pointerId, inicio: e.clientY};
+  cabecera.setPointerCapture(e.pointerId);
+};
+cabecera.onpointermove = e => {
+  if (gesto?.id === e.pointerId) hoja.style.transform = `translateY(${Math.max(0, e.clientY - gesto.inicio)}px)`;
+};
+// Mantener la capa hasta consumir el final del toque evita que el navegador
+// sintetice un clic sobre la fila que aparece debajo de la hoja.
+let cerrarPorGesto = false;
+cabecera.onpointerup = e => {
+  if (gesto?.id !== e.pointerId) return;
+  cerrarPorGesto = e.clientY - gesto.inicio > 80;
+  gesto = null;
+  if (!cerrarPorGesto) hoja.style.transform = "";
+};
+cabecera.addEventListener("touchend", e => {
+  if (!cerrarPorGesto) return;
+  e.preventDefault();
+  control.close();
+}, {passive: false});
+cabecera.onclick = e => {
+  if (cerrarPorGesto) {
+    e.stopPropagation();
+    control.close();
   }
+};
+cabecera.onlostpointercapture = () => {
+  gesto = null;
+  if (!cerrarPorGesto) hoja.style.transform = "";
+};
+control.onkeydown = e => {
+  if (e.key !== "Tab") return;
+  const opciones = control.querySelectorAll("button:not(:disabled), summary");
+  const primero = opciones[0];
+  const ultimo = opciones[opciones.length - 1];
+  if (e.shiftKey && [primero, $("rem-nombre")].includes(document.activeElement)) {
+    e.preventDefault();
+    ultimo.focus();
+  } else if (!e.shiftKey && document.activeElement === ultimo) {
+    e.preventDefault();
+    primero.focus();
+  }
+};
+control.onclose = () => {
+  seleccionado = null;
+  cerrarPorGesto = false;
+  hoja.style.transform = "";
+  origen?.focus({preventScroll: true});
+};
+for (const id of ["filtro-lab", "filtro-busq-eq"]) $(id).oninput = inventario;
+
+try {
+  [laboratorios, equipos] = await Promise.all([cargarLaboratorios(), cargarEquipos()]);
+  $("filtro-lab").innerHTML = '<option value="">Todos los laboratorios</option>' + laboratorios.map(l => `<option value="${esc(l.id)}">${esc(l.nombre)}</option>`).join("");
+  $("filtro-lab").value = getQueryParam("lab") || "";
+  if (!permitido) $("aviso-sin-permiso").style.display = "flex";
+  actualizarTotales();
+  inventario();
+} catch {
+  showToast("No se pudieron cargar los equipos.", "error");
+}

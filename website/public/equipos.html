@@ -15,6 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <title>Equipos · LabControl</title>
 <link rel="stylesheet" href="css/style.css?v=4.9.0" />
+<link rel="stylesheet" href="css/operaciones.css" />
 <script src="js/theme.js?v=4.9.0"></script>
 </head>
 <body>
@@ -33,69 +34,17 @@
     </div>
   </aside>
 
-  <main class="main-content" id="main-content" role="main" tabindex="-1">
-    <header class="page-header">
-      <div>
-        <h1>Inventario de equipos</h1>
-        <p>Equipos por laboratorio, estado e información técnica</p>
+  <main data-theme="oscuro" class="main-content operaciones" id="main-content" role="main" tabindex="-1">
+    <header class="page-header"><h1>Equipos</h1></header>
+    <dl class="indicadores" id="eq-stats"><div><dt>Equipos</dt><dd id="total">—</dd></div><div><dt>Activos</dt><dd id="activos">—</dd></div><div><dt>Otros estados</dt><dd id="otros">—</dd></div></dl>
+    <section aria-labelledby="inventario-titulo">
+      <h2 id="inventario-titulo">Inventario de equipos</h2>
+      <div class="filtros">
+        <label>Buscar equipo<input class="form-input" id="filtro-busq-eq" type="search" placeholder="Buscar por identificador" /></label>
+        <label>Laboratorio<select class="form-input" id="filtro-lab"></select></label>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <select class="form-input" id="filtro-lab" style="width:190px;margin:0"></select>
-        <input class="form-input" id="filtro-busq-eq" type="search"
-          placeholder="Buscar equipo…" style="width:170px;margin:0" />
-      </div>
-    </header>
-
-    <!-- Tarjetas resumen -->
-    <div class="stat-grid" id="eq-stats" style="margin-bottom:20px"></div>
-
-    <!-- Tabla de equipos -->
-    <div class="card" style="margin-bottom:20px">
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Equipo / Laboratorio</th>
-              <th>Tipo</th>
-              <th>Estado</th>
-              <th id="th-tecnico">Procesador / RAM</th>
-              <th id="th-red">IP / MAC</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="tabla-equipos"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Panel de control remoto (solo Programación/Admin) -->
-    <div id="seccion-remoto" style="display:none">
-      <div class="section-title" style="padding:0 4px 10px">Control remoto — simulado</div>
-      <div class="card" id="panel-remoto-vacio" style="padding:20px;color:var(--color-text-muted);font-size:.88rem">
-        Selecciona un equipo en la tabla (botón "Control") para enviarle comandos remotos.
-      </div>
-      <div id="panel-remoto" style="display:none">
-        <div class="card" style="padding:20px;margin-bottom:14px">
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-            <div>
-              <strong id="rem-nombre" style="font-size:1rem"></strong>
-              <div style="color:var(--color-text-muted);font-size:.8rem;margin-top:2px" id="rem-detalle"></div>
-            </div>
-            <span class="badge" id="rem-badge"></span>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
-            <button class="btn btn--sm" data-cmd="encender"><i data-lucide="power"></i> Encender</button>
-            <button class="btn btn--sm" data-cmd="apagar"><i data-lucide="power-off"></i> Apagar</button>
-            <button class="btn btn--sm" data-cmd="reiniciar"><i data-lucide="refresh-cw"></i> Reiniciar</button>
-            <button class="btn btn--sm" data-cmd="bloquear"><i data-lucide="lock"></i> Bloquear</button>
-            <button class="btn btn--sm" data-cmd="captura"><i data-lucide="camera"></i> Capturar pantalla</button>
-            <button class="btn btn--sm btn--danger" data-cmd="apagar_todos"><i data-lucide="ban"></i> Apagar todos (lab)</button>
-          </div>
-        </div>
-        <div class="remote-log" id="remote-log"></div>
-      </div>
-    </div>
-
+      <div id="inventario"></div>
+    </section>
     <!-- Aviso para usuarios sin permisos técnicos -->
     <div id="aviso-sin-permiso" class="access-notice" style="display:none">
       <span><i data-lucide="lock"></i></span>
@@ -107,9 +56,37 @@
   </main>
 </div>
 
+<dialog class="control-capa operaciones" data-theme="oscuro" id="seccion-remoto" aria-labelledby="rem-nombre">
+  <div class="control-hoja">
+    <header id="control-cabecera">
+      <span class="tirador" aria-hidden="true"></span>
+      <small>Control simulado</small>
+      <h2 id="rem-nombre" tabindex="-1" autofocus></h2>
+      <div class="linea"><span id="rem-detalle"></span><span id="rem-badge"></span></div>
+    </header>
+    <div class="control-cuerpo">
+      <button type="button" class="solo-lector" id="salir-control">Cerrar control</button>
+      <div class="comandos">
+        <button class="btn" data-cmd="encender">Encender</button>
+        <button class="btn" data-cmd="apagar">Apagar</button>
+        <button class="btn" data-cmd="reiniciar">Reiniciar</button>
+        <button class="btn" data-cmd="bloquear">Bloquear</button>
+        <button class="btn" data-cmd="captura">Capturar pantalla</button>
+      </div>
+      <details id="tecnico"><summary>Detalles técnicos</summary><dl></dl></details>
+      <p id="remote-log" role="status"></p>
+    </div>
+  </div>
+</dialog>
+<div class="modal-overlay operaciones" data-theme="oscuro" id="acciones-lab" style="display:none" role="dialog" aria-modal="true" aria-labelledby="acciones-titulo">
+  <div class="modal"><div class="modal__header"><h2 id="acciones-titulo">Acciones del laboratorio</h2><button class="modal__close" aria-label="Cerrar">×</button></div>
+    <div class="modal__body"><p id="acciones-detalle"></p></div>
+    <div class="modal__footer"><button class="btn btn--danger" id="apagar-lab">Apagar todos los equipos</button></div>
+  </div>
+</div>
 <script type="module" src="js/data.js?v=4.9.0"></script>
 <script src="js/vendor/lucide.min.js?v=4.9.0"></script>
 <script type="module" src="js/app.js?v=4.9.0"></script>
-<script type="module" src="js/equipos.js?v=4.9.0"></script>
+<script type="module" src="js/equipos.js?v=4.9.1"></script>
 </body>
 </html>
