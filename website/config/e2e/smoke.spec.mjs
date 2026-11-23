@@ -443,18 +443,17 @@ test("auditoría: el admin ve los registros de actividad y filtra", async ({ pag
   await expect(page.locator("#aud-tbody").first()).toContainText("Inicio de sesión", { timeout: 8000 });
 });
 
-test("calendario semanal: navegación entre semanas y columna de hoy", async ({ page }) => {
+test("reservas por día y por semana según la fecha elegida", async ({ page }) => {
   await login(page, CRED.admin.user, CRED.admin.pass);
   await page.goto("/disponibilidad");
-
-  await expect(page.locator("#semana-wrap .semana-tabla")).toContainText("Laboratorio", { timeout: 8000 });
-  await expect(page.locator(".semana-th--hoy")).toHaveCount(1, { timeout: 8000 });
-  await expect(page.locator("#semana-label")).toContainText("(hoy)", { timeout: 8000 });
-
-  await page.click("#btn-semana-sig");
-  await expect(page.locator("#semana-label")).not.toContainText("(hoy)", { timeout: 8000 });
-  await page.click("#btn-semana-ant");
-  await expect(page.locator("#semana-label")).toContainText("(hoy)", { timeout: 8000 });
+  await expect(page.locator("#agenda .dia")).toHaveCount(1);
+  await page.click('[data-modo="semana"]');
+  await expect(page.locator("#agenda .dia")).toHaveCount(7);
+  await page.fill("#fecha-agenda", "2027-01-01");
+  await expect(page.locator("#agenda h3").first()).toContainText("lunes, 28 de diciembre de 2026");
+  await expect(page.locator("#agenda h3").last()).toContainText("domingo, 3 de enero de 2027");
+  await page.click("#hoy");
+  await expect(page.locator("#fecha-agenda")).toHaveValue(await page.locator("#res-fecha").evaluate(() => new Date().toLocaleDateString("sv-SE")));
 });
 
 test("respaldos: el admin descarga un archivo .db", async ({ page }) => {

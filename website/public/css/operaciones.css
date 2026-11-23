@@ -1,0 +1,114 @@
+/* Hoja local de Disponibilidad y Equipos. */
+.operaciones {
+  --color-bg: #101412;
+  --color-surface: #191e1c;
+  --color-border: #323a35;
+  --color-text-muted: #bdc8c1;
+  color: var(--color-text);
+}
+.operaciones h1, .operaciones h2, .operaciones h3, .operaciones h4 { color: var(--color-text); margin: 0; }
+.operaciones h1 { font-size: clamp(2rem, 4.3vw, 3.3rem); }
+.operaciones h2 { font-size: 1.25rem; margin-bottom: 14px; }
+.operaciones h3 { font-size: 1rem; }
+.operaciones .page-header { align-items: center; margin-bottom: 18px; }
+.operaciones .page-header p, .dia h3 { text-transform: capitalize; }
+.operaciones .page-header p, .control-hoja small { color: #79dfb1; }
+.indicadores { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin: 0 0 26px; }
+.indicadores > div, .bloque-lab, .dia, .tarjeta, .estado-tabla {
+  border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface);
+}
+.indicadores > div {
+  position: relative; display: flex; flex-direction: column-reverse; gap: 2px; padding: 18px 20px;
+  background: linear-gradient(110deg, #202722, #191e1c);
+}
+.indicadores > div:first-child { background: linear-gradient(110deg, #18372a, #19291f); }
+.indicadores > div::after {
+  content: ""; position: absolute; inset: 50% 18px auto auto; transform: translateY(-50%);
+  width: 38px; height: 48px; opacity: .45;
+  background: radial-gradient(circle, #84c4a3 2px, transparent 3px) 0 0 / 10px 10px;
+}
+.indicadores dt, .filtros label, .operaciones dl dt { color: var(--color-text-muted); font-size: .82rem; }
+.indicadores dd { margin: 4px 0 0; font-size: clamp(1.65rem, 3vw, 2.45rem); font-variant-numeric: tabular-nums; font-weight: 750; line-height: 1.2; }
+#btn-nueva-reserva { background: #6adeac; color: #0e251a; }
+.fecha-cabecera, .nombre-lab, .titulo-estado { display: flex; align-items: center; gap: 10px; }
+.operaciones .fecha-cabecera { text-transform: uppercase; letter-spacing: .07em; font: .77rem/1.6 monospace; color: var(--color-text-muted); }
+.fecha-cabecera svg.lucide { color: #6adeac; width: 16px; }
+.titulo-estado { justify-content: space-between; margin: 0 0 14px; }
+.titulo-estado h2 { margin: 0; }
+.titulo-estado span { color: var(--color-text-muted); font-size: .84rem; }
+.estado-tabla .btn { color: #78dfb1; padding: 6px; border-color: transparent; background: transparent; }
+.estado-tabla th { background: #202722; color: #b4c3b8; }
+.estado-tabla td { padding-block: 14px; }
+.nombre-lab svg.lucide { flex: none; width: 32px; height: 32px; padding: 7px; color: #8ccdad; border-radius: 8px; background: #23352b; }
+.estado-tabla .badge--ocupado, .tarjeta .badge--ocupado { background: #493922; color: #ffce8c; }
+.filtros { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 0 0 16px; }
+.filtros label { flex: 1; min-width: 0; max-width: 28rem; }
+.filtros .form-input { display: block; margin: 5px 0 0; width: 100%; }
+.operaciones .btn { white-space: normal; }
+.operaciones .badge--mantencion { background: #44391f; color: #fbd58a; }
+.bloque-lab, .dia, .tarjeta { margin-bottom: 16px; overflow: hidden; }
+.bloque-lab > header, .equipo, .reserva { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; }
+.bloque-lab > header, .dia h3 { background: #1e3027; padding: 15px 18px; }
+.bloque-lab ul { list-style: none; padding: 0; margin: 0; }
+.equipo, .reserva { border-top: 1px solid var(--color-border); }
+.equipo > div, .reserva > div, .bloque-lab header > div { min-width: 0; overflow-wrap: anywhere; }
+.equipo .btn { flex: none; }
+.bloque-lab p, .tarjeta p, .control-hoja p, .reserva small, .vacio { color: var(--color-text-muted); font-size: .85rem; margin: 3px 0 0; }
+.linea { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ver-mas, .operaciones summary { color: #80e7b8; cursor: pointer; font-weight: 600; }
+.ver-mas { padding: 12px 18px; border: 0; border-top: 1px solid var(--color-border); width: 100%; background: transparent; font: inherit; }
+.estado-tabla { margin-bottom: 26px; }
+#tarjetas-disponibilidad { display: none; }
+.reserva { justify-content: flex-start; }
+.reserva > strong { color: #80e7b8; }
+.reserva .btn { margin-left: auto; }
+.vacio { padding: 16px 18px; }
+.segmentos { display: flex; gap: 4px; }
+.segmentos [aria-pressed="true"] { background: #12583e; border-color: #60c093; }
+.agenda-controles label { flex: 0 1 auto; }
+.dia h3 { margin: 0; }
+.tarjeta { padding: 14px; }
+.tarjeta details, .control-cuerpo details { margin-top: 12px; }
+.tarjeta details:not([open]) summary span:last-child, .tarjeta details[open] summary span:first-child { display: none; }
+.operaciones details dl { margin: 12px 0; }
+.operaciones details dl > div { display: grid; grid-template-columns: 1fr 1.6fr; gap: 8px; padding: 6px 0; }
+.operaciones details dd { margin: 0; overflow-wrap: anywhere; }
+#res-error:not(:empty) { margin: 0 20px 12px; color: #ffaca5; }
+.operaciones.modal-overlay .modal { max-height: 90dvh; overflow-y: auto; }
+html:has(.control-capa[open]), body:has(.control-capa[open]) { overflow: hidden; }
+html:has(.control-capa) { scrollbar-gutter: stable; }
+.control-capa {
+  position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 0; background: transparent; overflow: hidden;
+}
+.control-capa[open] { display: grid; place-items: center; }
+.control-capa::backdrop { background: rgb(4 12 8 / 72%); }
+.control-hoja {
+  width: min(450px, 95%); max-height: 90dvh; overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface);
+  box-shadow: 0 18px 64px #0006;
+}
+#control-cabecera, .control-cuerpo { padding: 20px; }
+#control-cabecera { border-bottom: 1px solid var(--color-border); }
+#control-cabecera h2 { margin: 4px 0; }
+.comandos { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.comandos button:last-child { grid-column: 1 / -1; }
+.comandos button:disabled { opacity: .45; cursor: default; }
+.control-cuerpo details { border-block: 1px solid var(--color-border); padding: 12px 0; }
+#remote-log { margin-top: 12px; }
+.solo-lector { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 860px) {
+  .estado-tabla { display: none; }
+  #tarjetas-disponibilidad { display: block; }
+  .indicadores { gap: 6px; }
+  .indicadores > div { padding: 10px; }
+  .indicadores > div::after { display: none; }
+  .filtros:not(.agenda-controles) label { flex-basis: 100%; max-width: none; }
+  .bloque-lab > header, .equipo { padding: 12px; }
+  .bloque-lab header .btn { max-width: 45%; }
+  .reserva { flex-wrap: wrap; }
+  .control-capa[open] { align-items: end; }
+  .control-hoja { width: 100%; border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+  #control-cabecera { touch-action: none; padding-top: 9px; }
+  .tirador { display: block; margin: 0 auto 12px; width: 40px; height: 5px; background: #85998c; border-radius: 8px; }
+}

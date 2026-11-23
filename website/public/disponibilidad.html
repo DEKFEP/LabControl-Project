@@ -15,6 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <title>Disponibilidad · LabControl</title>
 <link rel="stylesheet" href="css/style.css?v=4.9.0" />
+<link rel="stylesheet" href="css/operaciones.css" />
 <script src="js/theme.js?v=4.9.0"></script>
 </head>
 <body>
@@ -33,19 +34,14 @@
     </div>
   </aside>
 
-  <main class="main-content" id="main-content" role="main" tabindex="-1">
-    <header class="page-header">
-      <div>
-        <h1>Disponibilidad de laboratorios</h1>
-        <p>Estado actual, horarios y agenda de reservas</p>
-      </div>
-      <button class="btn btn--primary" id="btn-nueva-reserva">+ Nueva reserva</button>
+  <main data-theme="oscuro" class="main-content operaciones" id="main-content" role="main" tabindex="-1">
+    <header class="page-header"><div><p class="fecha-cabecera"><i data-lucide="calendar-days" aria-hidden="true"></i><span id="fecha-hoy"></span></p><h1>Disponibilidad</h1></div>
+      <button class="btn btn--primary" id="btn-nueva-reserva"><i data-lucide="plus" aria-hidden="true"></i>Nueva reserva</button>
     </header>
-
-    <!-- Tabla de disponibilidad -->
-    <div class="card" style="margin-bottom:20px">
-      <div class="section-title">Estado actual</div>
-      <div class="table-wrap">
+    <dl class="indicadores" id="disp-stats"><div><dt>Laboratorios</dt><dd id="total">—</dd></div><div><dt>Disponibles</dt><dd id="disponibles">—</dd></div><div><dt>Reservas hoy</dt><dd id="reservas-hoy">—</dd></div></dl>
+    <section><div class="titulo-estado"><h2>Estado actual</h2><span id="cuenta-labs"></span></div>
+      <div id="tarjetas-disponibilidad"></div>
+      <div class="table-wrap estado-tabla">
         <table>
           <thead>
             <tr>
@@ -61,53 +57,29 @@
           <tbody id="tabla-disponibilidad"></tbody>
         </table>
       </div>
-    </div>
-
-    <!-- Agenda de reservas -->
-    <div class="card">
-      <div class="section-title">Agenda de reservas</div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Laboratorio</th>
-              <th>Fecha</th>
-              <th>Horario</th>
-              <th>Motivo</th>
-              <th>Solicitado por</th>
-              <th>Estado</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="tabla-agenda"></tbody>
-        </table>
+    </section>
+    <section><h2>Reservas</h2>
+      <div class="filtros agenda-controles">
+        <div class="segmentos" role="group" aria-label="Vista de reservas"><button class="btn" data-modo="dia" aria-pressed="true">Día</button><button class="btn" data-modo="semana" aria-pressed="false">Semana</button></div>
+        <label>Elegir fecha<input class="form-input" type="date" id="fecha-agenda" /></label>
+        <button class="btn" id="hoy">Hoy</button>
       </div>
-    </div>
-
-    <!-- Calendario semanal -->
-    <div class="card" style="margin-top:20px">
-      <div class="section-title">Calendario semanal de reservas</div>
-      <div class="semana-nav">
-        <button class="btn btn--sm" id="btn-semana-ant"><i data-lucide="chevron-left"></i> Semana anterior</button>
-        <span id="semana-label" class="semana-label">Cargando…</span>
-        <button class="btn btn--sm" id="btn-semana-sig">Semana siguiente <i data-lucide="chevron-right"></i></button>
-      </div>
-      <div class="table-wrap" id="semana-wrap"></div>
-    </div>
+      <div id="agenda"></div>
+    </section>
   </main>
 </div>
 
 <!-- Modal: cambiar estado -->
-<div class="modal-overlay" id="modal-estado" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-estado-titulo">
+<div class="modal-overlay operaciones" data-theme="oscuro" id="modal-estado" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-estado-titulo">
   <div class="modal">
     <div class="modal__header">
       <span class="modal__title" id="modal-estado-titulo">Cambiar estado del laboratorio</span>
-      <button class="modal__close" id="btn-cerrar-estado"><i data-lucide="x"></i></button>
+      <button aria-label="Cerrar" class="modal__close" id="btn-cerrar-estado"><i data-lucide="x"></i></button>
     </div>
     <div class="modal__body">
       <p id="modal-estado-lab" style="font-weight:600;margin-bottom:12px"></p>
       <div class="form-group">
-        <label class="form-label">Nuevo estado</label>
+        <label class="form-label" for="select-nuevo-estado">Nuevo estado</label>
         <select class="form-input" id="select-nuevo-estado">
           <option value="disponible">Disponible</option>
           <option value="ocupado">Ocupado</option>
@@ -123,46 +95,47 @@
 </div>
 
 <!-- Modal: nueva reserva -->
-<div class="modal-overlay" id="modal-reserva" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-reserva-titulo">
-  <div class="modal">
+<div class="modal-overlay operaciones" data-theme="oscuro" id="modal-reserva" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-reserva-titulo">
+  <form class="modal" id="form-reserva" novalidate>
     <div class="modal__header">
-      <span class="modal__title" id="modal-reserva-titulo">Agendar uso de laboratorio</span>
-      <button class="modal__close" id="btn-cerrar-reserva"><i data-lucide="x"></i></button>
+      <span class="modal__title" id="modal-reserva-titulo">Nueva reserva</span>
+      <button type="button" aria-label="Cerrar" class="modal__close" id="btn-cerrar-reserva"><i data-lucide="x"></i></button>
     </div>
     <div class="modal__body">
       <div class="form-group">
-        <label class="form-label">Laboratorio</label>
+        <label class="form-label" for="res-lab">Laboratorio</label>
         <select class="form-input" id="res-lab"></select>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Fecha</label>
+          <label class="form-label" for="res-fecha">Fecha</label>
           <input class="form-input" type="date" id="res-fecha" required />
         </div>
         <div class="form-group">
-          <label class="form-label">Hora inicio</label>
+          <label class="form-label" for="res-inicio">Hora inicio</label>
           <input class="form-input" type="time" id="res-inicio" value="08:00" />
         </div>
         <div class="form-group">
-          <label class="form-label">Hora fin</label>
+          <label class="form-label" for="res-fin">Hora fin</label>
           <input class="form-input" type="time" id="res-fin" value="10:00" />
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Motivo / Actividad</label>
+        <label class="form-label" for="res-motivo">Actividad</label>
         <input class="form-input" type="text" id="res-motivo" placeholder="Ej: Clase de Estadística aplicada" required minlength="3" />
       </div>
     </div>
+    <p id="res-error" role="alert"></p>
     <div class="modal__footer">
-      <button class="btn" id="btn-cancelar-reserva">Cancelar</button>
-      <button class="btn btn--primary" id="btn-guardar-reserva">Confirmar reserva</button>
+      <button type="button" class="btn" id="btn-cancelar-reserva">Cancelar</button>
+      <button class="btn btn--primary" type="submit" id="btn-guardar-reserva">Confirmar reserva</button>
     </div>
-  </div>
+  </form>
 </div>
 
 <script type="module" src="js/data.js?v=4.9.0"></script>
 <script src="js/vendor/lucide.min.js?v=4.9.0"></script>
 <script type="module" src="js/app.js?v=4.9.0"></script>
-<script type="module" src="js/disponibilidad.js?v=4.9.0"></script>
+<script type="module" src="js/disponibilidad.js?v=4.9.1"></script>
 </body>
 </html>
