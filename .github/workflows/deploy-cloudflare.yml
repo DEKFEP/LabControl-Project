@@ -358,10 +358,11 @@ jobs:
           [ -n "$token_salud" ] && cabeceras=(-H "x-lc-salud-token: $token_salud")
 
           for intento in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            if salud="$(curl -fsS ${cabeceras[@]+"${cabeceras[@]}"} "https://$HOST/api/salud")"; then
+            if salud="$(curl --max-time 10 -fsS ${cabeceras[@]+"${cabeceras[@]}"} "https://$HOST/api/salud")" && jq -e '.ok == true' <<< "$salud" >/dev/null; then
               echo "$salud"
               break
             fi
+            salud=""
             echo "Intento $intento: la API todavia no responde, reintentando..."
             sleep 10
           done

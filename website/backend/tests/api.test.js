@@ -490,6 +490,11 @@ test("laboratorios: cualquier autenticado cambia estado; campos técnicos exigen
     .send({ estado: "ocupado" });
   expect(ok.status).toBe(200);
   expect(ok.body.estado).toBe("ocupado");
+  const avisos = await request(app).get("/api/notificaciones")
+    .set("Authorization", `Bearer ${await login()}`);
+  expect(avisos.body).toEqual(expect.arrayContaining([
+    expect.objectContaining({ tipo: "laboratorio", mensaje: expect.stringContaining(ok.body.nombre) })
+  ]));
 
   const denegado = await request(app)
     .patch("/api/laboratorios/1")

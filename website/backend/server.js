@@ -865,8 +865,7 @@ function notificarCambioEstadoLab(lab, estadoNuevo, estadoAnterior, actorId) {
     tipo: "laboratorio",
     titulo: "Estado de laboratorio actualizado",
     mensaje: `{quien} marcó ${lab.nombre} como "${ETIQUETAS_ESTADO[estadoNuevo] ?? estadoNuevo}".`,
-    actorId,
-    referencia: String(lab.id)
+    actorId
   });
 }
 
@@ -1289,7 +1288,7 @@ app.get("/api/salud", (req, res) => {
     ? {
         ok: true,
         servicio: "labcontrol-api",
-        version: "4.9.0",
+        version: "4.9.1",
         cuentasDemoPendientes: cuentasDemoSinRotar().length
       }
     : { ok: true });

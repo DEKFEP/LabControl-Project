@@ -17,6 +17,8 @@ const CABECERAS_SALTAR = new Set([
   "cdn-loop",
   "cf-colo",
   "forwarded",
+  "x-forwarded-for",
+  "x-real-ip",
   "x-forwarded-proto",
   "x-forwarded-host",
   "x-lc-client-ip",
@@ -43,7 +45,7 @@ function limpio(headers) {
    real tambien se envia firmada en x-lc-client-ip + x-lc-proxy-secret (ver onRequest),
    que el backend ancla a req.ip cuando el secreto coincide. */
 function ipReal(headers) {
-  return headers.get("cf-connecting-ip") || headers.get("x-real-ip") || "";
+  return headers.get("cf-connecting-ip") || "";
 }
 
 /* Copia cada Set-Cookie por separado. `Headers.entries()` combina los valores

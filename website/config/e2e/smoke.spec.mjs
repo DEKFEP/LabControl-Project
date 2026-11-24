@@ -370,6 +370,10 @@ test("modo offline: el SW sirve el shell, los assets y el inventario desde cach√
   expect(offline[`css/style.css?v=${version}`]).toBe(true);
   expect(offline[`js/app.js?v=${version}`]).toBe(true);
 
+  expect(await page.evaluate(async () => {
+    const labs = await (await fetch("/api/laboratorios")).json();
+    return labs.every((lab) => !("red" in lab) && !("responsable" in lab));
+  })).toBe(true);
   const degradacion = await page.evaluate(async () => {
     const mod = await import("./js/data.js");
     return mod.cargarLaboratorios().then(
@@ -379,6 +383,8 @@ test("modo offline: el SW sirve el shell, los assets y el inventario desde cach√
   });
   // Sin conexi√≥n, el inventario que guard√≥ el service worker sigue disponible.
   expect(degradacion).toBe("datos");
+  await page.goto("/login");
+  await expect(page.locator("#input-user")).toBeVisible();
   await context.setOffline(false);
 
   expect(errores).toEqual([]);
