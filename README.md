@@ -1,14 +1,13 @@
 # LabControl
 
 Sistema web para el control y la supervisión de los laboratorios de computación del Liceo
-INSUCO. Permite consultar y administrar la disponibilidad, el inventario de equipos, el mapa
-del establecimiento, las reservas de uso, los reportes y las cuentas de los profesores, con
-autenticación por roles y base de datos real en el backend.
+INSUCO. Permite consultar y administrar la disponibilidad, las reservas de uso, el inventario de equipos,
+los reportes y las cuentas del profesorado. Las funciones disponibles dependen del rol de cada cuenta.
 
 **Sitio publicado:** <https://labcontrol-ym.pages.dev>
 
 Proyecto de la asignatura *Diseño y Aplicaciones Web*. Lo que cambió en cada versión está en las
-[releases](https://github.com/DereckYQL/LabControl-Project/releases); este README describe el
+[releases](https://github.com/DEKFEP/LabControl-Project/releases); este README describe el
 sistema, no su historial.
 
 ---
@@ -22,10 +21,30 @@ sistema, no su historial.
 
 ---
 
-## 1. Contenido del sistema
+## 1. Módulos del sistema
 
-| Módulo | Qué permite |
+El menú principal muestra estos apartados en el mismo orden en el computador y en el celular.
+
+| Apartado | Qué puedes hacer |
 |---|---|
+| **Inicio** | Consultar el resumen de los laboratorios, ver sus fotos y abrir la ficha de una sala. El botón **Agendar uso** lleva a Disponibilidad. |
+| **Disponibilidad** | Ver el estado, horario y responsable de cada laboratorio, cambiar su estado y gestionar reservas en la agenda diaria o semanal. El sistema comprueba si el horario se solapa con otra reserva. |
+| **Equipos** | Buscar equipos y filtrar el inventario por laboratorio. Los perfiles técnicos pueden consultar el hardware y los datos de red, y probar acciones de control remoto simulado. |
+| **Reportes** | Programación y Administración pueden generar reportes de uso, disponibilidad, fallas, inventario u otro tema, adjuntar archivos, imprimir y exportar a CSV. |
+
+### Otras páginas y accesos
+
+| Página | Dónde encontrarla y qué permite |
+|---|---|
+| **Inicio de sesión** | En `/login` puedes ingresar, registrar una cuenta y acceder a las opciones de recuperación. Si activaste la verificación en dos pasos, se te pedirá el código al ingresar. |
+| **Laboratorios** | Desde **Inicio → Laboratorios → Ver más** puedes abrir el listado. Cada ficha reúne **Información general**, **Hardware**, **Servicios** y **Agenda**, con el detalle técnico sujeto a permisos. |
+| **Configuración** | Desde **Perfil** puedes acceder a **Mi perfil**, **Apariencia**, **Notificaciones** y **Seguridad**. Administración también dispone de **Sitio web**, **Laboratorios**, **Equipos**, **Red**, **Usuarios**, **Auditoría**, **Respaldos** y **Sistema**. |
+| **Usuarios** | En `/usuarios` se consultan las fichas del profesorado. Administración puede crear cuentas, asignar niveles de acceso, editar datos, desactivar, reactivar y eliminar cuentas. |
+
+LabControl se puede instalar como aplicación web (PWA). Guarda archivos estáticos en el
+dispositivo para volver a abrir la interfaz sin conexión. Guardar cambios requiere acceso a la API.
+
+---|---|
 | **Inicio de sesión** | Acceso con usuario y contraseña, renovación automática de sesión y registro de cuentas nuevas (el administrador les otorga el nivel de acceso). |
 | **Panel** | Resumen del estado de los laboratorios, actividad reciente y distribución de equipos. |
 | **Laboratorios** | Ficha de cada laboratorio: estado, hardware, servicios disponibles y agenda de la semana. |
@@ -51,8 +70,9 @@ estáticos para trabajar sin conexión.
 | Editar los datos técnicos de un laboratorio | No | Sí | Sí |
 | Ver datos técnicos del equipo (hardware, IP/MAC) | No | Sí | Sí |
 | Control remoto de equipos | No | Sí | Sí |
-| Consultar los reportes y exportarlos a CSV | Sí | Sí | Sí |
-| Crear, editar y eliminar reportes propios | Sí | Sí | Sí |
+| Consultar reportes | Solo propios | Sí | Sí |
+| Crear reportes | No | Sí | Sí |
+| Editar o eliminar reportes propios | Sí | Sí | Sí |
 | Editar o eliminar reportes de otros | No | No | Sí |
 | Crear cuentas y editar las de otros | No | No | Sí |
 | Desactivar, reactivar o eliminar cuentas de otros | No | No | Sí |
@@ -131,7 +151,7 @@ Si el hosting no copia `public/` junto a `backend/`, se indica la ruta con `LC_P
 ├── website/
 │   ├── public/                         Sitio publicado (web estática)
 │   │   ├── login.html                  Inicio de sesión y registro
-│   │   ├── index.html                  Panel
+│   │   ├── index.html                  Inicio
 │   │   ├── laboratorios.html           Laboratorios y su ficha
 │   │   ├── disponibilidad.html         Estado y agenda de reservas
 │   │   ├── equipos.html                Inventario de equipos
@@ -166,7 +186,7 @@ Si el hosting no copia `public/` junto a `backend/`, se indica la ruta con `LC_P
 ```
 
 Los nombres `.html` del árbol son archivos en disco, **no URLs públicas**. El sitio
-se navega con rutas limpias (`/login`, `/equipos`, `/configuración`…); Cloudflare
+se navega con rutas limpias (`/login`, `/equipos`, `/configuracion`…); Cloudflare
 Pages sirve cada archivo en su ruta sin extensión y `_redirects` redirige 308
 cualquier enlace antiguo con `.html` a la ruta limpia. El servidor local hace lo
 mismo con `extensions: ["html"]`. La URL histórica `insuco-labcontrol.pages.dev`
