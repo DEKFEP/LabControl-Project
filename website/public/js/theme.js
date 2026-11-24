@@ -1,4 +1,3 @@
-/* theme.js — aplica el tema guardado antes de pintar para evitar destellos. */
 try {
   var t = localStorage.getItem("lc_tema");
   if (t === "dark-sidebar") t = "oscuro";

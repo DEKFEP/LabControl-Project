@@ -1,5 +1,3 @@
-/* db.js — conexión SQLite (node:sqlite), esquema, migraciones y datos de ejemplo. */
-
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -8,7 +6,6 @@ import bcrypt from "bcryptjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// LC_DB_DIR permite apuntar la base a otra carpeta (lo usan los tests).
 const DB_DIR = process.env.LC_DB_DIR
   ? path.resolve(process.env.LC_DB_DIR)
   : path.join(__dirname, "database");
@@ -18,20 +15,13 @@ const esNueva = !fs.existsSync(DB_PATH);
 fs.mkdirSync(DB_DIR, { recursive: true });
 
 let db = null;
-// `true` mientras se reemplaza la base por un respaldo: durante esa ventana la
-// conexión vigente se cierra y cualquier petición que toque la base debe
-// recibir 503 en lugar de un error 500.
 let reemplazando = false;
-// Ganchos que el servidor registra para purgar su estado en memoria (desafíos
-// 2FA) cuando la base se sustituye por una de otra versión.
 const ganchosAlRestaurar = new Set();
 
-// ¿La base está disponible para atender peticiones?
 export function baseDisponible() {
   return db !== null && !reemplazando;
 }
 
-// Registra una función que se ejecutará tras restaurar un respaldo.
 export function alRestaurar(fn) {
   ganchosAlRestaurar.add(fn);
 }
@@ -39,9 +29,6 @@ export function alRestaurar(fn) {
 const PREFIJO_TEMPORAL = ".labcontrol-temporal-";
 const rutaTemporal = (sufijo) => path.join(DB_DIR, `${PREFIJO_TEMPORAL}${sufijo}`);
 
-// Comprobación completa de integridad (B-12). `quick_check` solo mira páginas;
-// `integrity_check` revisa también índices y claves foráneas. Se usa al exportar,
-// al validar un respaldo recibido y al abrir la base tras aplicar migraciones.
 function verificarIntegridadTotal(d, mensaje = "La base de datos no pasó la verificación de integridad") {
   const fila = d.prepare("PRAGMA integrity_check").get();
   const resultado = fila ? Object.values(fila)[0] : null;
@@ -52,32 +39,21 @@ function verificarIntegridadTotal(d, mensaje = "La base de datos no pasó la ver
   }
 }
 
-// Borra los temporales que hubiera dejado una restauración interrumpida, para
-// que un corte de luz no ensucie la carpeta de datos (idempotente).
 function limpiarTemporales() {
   try {
     for (const nombre of fs.readdirSync(DB_DIR)) {
       if (nombre.startsWith(PREFIJO_TEMPORAL)) {
-        try { fs.rmSync(path.join(DB_DIR, nombre), { force: true }); } catch { /* en uso */ }
+        try { fs.rmSync(path.join(DB_DIR, nombre), { force: true }); } catch {}
       }
     }
-  } catch { /* la carpeta puede no existir todavía */ }
+  } catch {}
 }
 
-// Abre una base, aplica esquema y migraciones y devuelve la conexión lista.
-// Es async porque `aplicarMigraciones` puede necesitar bcrypt al adaptar una
-// base antigua; separarla de la inicialización permite reabrir la base tras un
-// respaldo y preparar una copia temporal antes de sustituir la original.
 async function abrirConexion(ruta = DB_PATH) {
   const d = new DatabaseSync(ruta);
-  // journal DELETE (sin WAL): la app es de un único proceso/usuario y así se
-  // evita que Windows deje handles de -wal/-shm que bloquean copias/restauros.
   d.exec("PRAGMA journal_mode = DELETE");
   d.exec("PRAGMA foreign_keys = ON");
-  // Windows libera handles con retardo; esperar en lugar de fallar.
   d.exec("PRAGMA busy_timeout = 15000");
-  // Copia de seguridad antes de migrar una base existente: así se puede volver
-  // atrás si una migración deja la base inconsistente (B-12).
   const hayTablas = Boolean(d.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'usuarios'").get());
   if (ruta === DB_PATH && hayTablas && estadoMigraciones(d).faltantes.length) {
     try { fs.copyFileSync(ruta, `${ruta}.bak`); } catch (err) {
@@ -90,11 +66,6 @@ async function abrirConexion(ruta = DB_PATH) {
   return d;
 }
 
-/* Esquema */
-
-// Todo el esquema se crea dentro de una transacción: si una sentencia falla, no
-// queda una base con la mitad de las tablas (antes el `exec` dejaba lo que
-// hubiera aplicado hasta el error).
 function crearEsquema(sesion) {
   sesion.exec("BEGIN");
   try {
@@ -210,24 +181,6 @@ CREATE TABLE IF NOT EXISTS seed_history (
   }
 }
 
-/* Migraciones (cada una se aplica una sola vez) */
-//
-// Cada migración declara:
-//   version    número de esquema que introduce (orden de aplicación)
-//   nombre     descripción legible (queda en `schema_migrations`)
-//   migrar(d)  qué hace al subir; puede ser async
-//   revertir(d) qué hace al bajar. Si no existe o `reversible: false`, la
-//              migración se considera irreversible: no se puede deshacer porque
-//              transformó datos que ya no se pueden recuperar, y el rollback se
-//              detiene ahí en lugar de dejar la base a medias.
-//   nota       por qué es irreversible, o qué se pierde al revertirla.
-//
-// El motor usa SAVEPOINT en lugar de BEGIN/COMMIT para poder envolver cada
-// migración aunque ya haya una transacción abierta, y comprueba versión a
-// versión en lugar de fiarse solo de MAX(version): así un hueco en
-// `schema_migrations` (por ejemplo, una copia parcial) se completa en vez de
-// saltarse migraciones enteras.
-
 const CONFIG_DEFAULT = {
   sitio: { nombreInstitucion: "Instituto Superior de Comercio", nombreSistema: "LabControl", logo: "", tema: "claro", idioma: "es" },
   red: { subredLabs: "192.168.10.0/24", servidorDNS: "192.168.1.1", puertaEnlace: "192.168.1.254", wifiHabilitado: true },
@@ -237,11 +190,6 @@ const CONFIG_DEFAULT = {
   equipos: { habilitarControlRemoto: true, apagadoAutomatico: false, monitoreoTiempoReal: true, intervaloEncendido: 30 }
 };
 
-/* Ficha de los laboratorios (única fuente de verdad) */
-
-// `so`, `equipos` y `servicios` provienen del documento de inventario de
-// laboratorios. Sala, ubicación, hardware, responsable y horario se conservan
-// tal como estaban.
 const LABORATORIOS = [
   {
     id: 1, nombre: "LAB COMP 1", sala: "Sala 2-7", ubicacion: "Segundo piso, ala derecha",
@@ -295,17 +243,14 @@ const LABORATORIOS = [
   }
 ];
 
-// Proyección de la ficha para poder aplicarla también sobre bases que ya existían.
 const DATOS_INVENTARIO = LABORATORIOS.map((l) => ({
   id: l.id, nombre: l.nombre, equipos: l.equipos, so: l.so, servicios: l.servicios
 }));
 
 const TOTAL_EQUIPOS_INVENTARIO = LABORATORIOS.reduce((n, l) => n + l.equipos, 0);
 
-// Desglose que usan los reportes de inventario de ejemplo (no son datos reales).
 const INVENTARIO_EJEMPLO = { enFalla: 3, enMantencion: 1 };
 
-// Fila de un equipo del laboratorio l, numerado desde 1 (PC-101, PC-102, …).
 function datosEquipo(l, i) {
   const n = String(i).padStart(2, "0");
   return {
@@ -348,7 +293,6 @@ const MIGRACIONES = [
       const usuarios = d.prepare("SELECT id, password FROM usuarios").all();
       for (const u of usuarios) {
         if (u.password && !u.password.startsWith("$2a$") && !u.password.startsWith("$2b$")) {
-          // bcrypt asíncrono: hashear en bloque detendría el event loop.
           const hashed = await bcrypt.hash(u.password, 10);
           d.prepare("UPDATE usuarios SET password = ? WHERE id = ?").run(hashed, u.id);
         }
@@ -403,9 +347,6 @@ const MIGRACIONES = [
       }
     },
     revertir(d) {
-      // El orden importa con `foreign_keys` activo: primero se suelta la
-      // columna que referencia a la tabla, y solo después se elimina la tabla.
-      // Al revés, DROP TABLE puede fallar o dejar la referencia colgando.
       const columnas = d.prepare("PRAGMA table_info(notificaciones)").all();
       if (columnas.some((c) => c.name === "solicitud_id")) {
         d.exec("ALTER TABLE notificaciones DROP COLUMN solicitud_id");
@@ -501,8 +442,6 @@ const MIGRACIONES = [
         WHERE id = @id
       `);
       const updSo = d.prepare("UPDATE equipos SET so = ? WHERE lab_id = ?");
-      // El id sigue el patrón "<labId>-PC<NN>", así que los 2 últimos caracteres
-      // son el número del equipo. El LIKE evita tocar equipos con otro id.
       const borrarSobrantes = d.prepare(`
         DELETE FROM equipos
         WHERE lab_id = ? AND id LIKE ?
@@ -516,7 +455,7 @@ const MIGRACIONES = [
       `);
 
       for (const l of DATOS_INVENTARIO) {
-        if (!hayLab.get(l.id)) continue; // esa base no tiene ese laboratorio
+        if (!hayLab.get(l.id)) continue;
         updLab.run({
           id: l.id, nombre: l.nombre, equipos: l.equipos, so: l.so,
           servicios: JSON.stringify(l.servicios)
@@ -530,7 +469,6 @@ const MIGRACIONES = [
         }
       }
 
-      // Reportes de ejemplo que citan el nombre y el total de la ficha anterior.
       const updReporte = d.prepare("UPDATE reportes SET datos = ? WHERE id = ?");
       for (const id of ["rep_001", "rep_003"]) {
         const fila = d.prepare("SELECT datos FROM reportes WHERE id = ?").get(id);
@@ -562,16 +500,6 @@ const MIGRACIONES = [
     version: 10,
     nombre: "alinear_columnas_con_el_esquema",
     migrar: async (d) => {
-      // `CREATE TABLE IF NOT EXISTS` crea la tabla si falta, pero nunca le añade
-      // columnas a una que ya existe: una columna nueva del esquema solo existe
-      // en las bases creadas a partir de ese momento. Como ninguna migración
-      // cubría `laboratorios.imagenes`, quedó fuera de todas las bases ya en
-      // uso y, al escribirla la semilla, el programa no arrancaba sobre ellas
-      // ("no such column: imagenes") aun con `schema_migrations` al día.
-      //
-      // El esquema canónico se reconstruye en memoria y se compara con el real,
-      // así que la fuente de verdad sigue siendo el DDL de arriba: esta
-      // migración no duplica la lista de columnas.
       const canonico = new DatabaseSync(":memory:");
       const anadidas = [];
       const omitidas = [];
@@ -585,8 +513,6 @@ const MIGRACIONES = [
           const reales = new Set(d.prepare(`PRAGMA table_info(${ref})`).all().map((c) => c.name));
           for (const col of canonico.prepare(`PRAGMA table_info(${ref})`).all()) {
             if (reales.has(col.name)) continue;
-            // SQLite no admite añadir una PRIMARY KEY, ni un NOT NULL sin valor
-            // por defecto: se avisa en vez de romper el arranque.
             if (col.pk || (col.notnull && col.dflt_value == null)) {
               omitidas.push(`${name}.${col.name}`);
               continue;
@@ -610,19 +536,12 @@ const MIGRACIONES = [
         );
       }
     },
-    // Sin `revertir`: las columnas añadidas no se pueden quitar sin perder lo que
-    // se haya escrito en ellas, y dejarlas es inocuo. Forzar el rollback solo
-    // desregistra la migración; la base conserva las columnas.
     nota: "Las columnas que añadió no se pueden quitar sin perder los datos que se hayan escrito en ellas, así que se dejan en su sitio. Forzar el rollback solo desregistra la migración: la base queda con las columnas añadidas, que no estorban."
   },
   {
     version: 11,
     nombre: "desafíos de verificación en dos pasos persistidos en la base",
     migrar(d) {
-      // Antes el servidor guardaba los desafíos de login y los secretos a medio
-      // configurar en memoria: un reinicio (p. ej. un redespliegue) los perdía y
-      // el usuario tenía que volver a empezar. Con estas tablas sobreviven al
-      // reinicio y quedan cubiertos por el respaldo.
       d.exec(`
         CREATE TABLE IF NOT EXISTS desafios_2fa (
           login_id   TEXT PRIMARY KEY,
@@ -653,8 +572,6 @@ const MIGRACIONES = [
     version: 12,
     nombre: "referencia al usuario en las notificaciones (usuario_ref)",
     migrar(d) {
-      // La notificación "Nuevo profesor registrado" apunta a la cuenta creada
-      // para que el admin pueda abrir su ficha y otorgarle el nivel de acceso.
       const columnas = d.prepare("PRAGMA table_info(notificaciones)").all();
       if (!columnas.some((c) => c.name === "usuario_ref")) {
         d.exec("ALTER TABLE notificaciones ADD COLUMN usuario_ref TEXT REFERENCES usuarios(id) ON DELETE SET NULL");
@@ -674,7 +591,6 @@ const MIGRACIONES = [
     migrar(d) {
       const fks = d.prepare("PRAGMA foreign_key_list(notificaciones)").all();
       if (fks.some((f) => f.from === "reporte_id" && f.table === "reportes")) return;
-      // SQLite no permite ADD CONSTRAINT: hay que reconstruir la tabla.
       d.exec(`
         CREATE TABLE notificaciones_v13 (
           id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -689,8 +605,6 @@ const MIGRACIONES = [
           leida        INTEGER DEFAULT 0
         )
       `);
-      // Las notificaciones antiguas que apuntaban a reportes ya borrados se
-      // dejan sin referencia antes de copiar, para no violar la FK nueva.
       d.exec(`
         UPDATE notificaciones
         SET reporte_id = NULL
@@ -740,7 +654,6 @@ const MIGRACIONES = [
 
 const ULTIMA_VERSION = MIGRACIONES[MIGRACIONES.length - 1].version;
 
-// Una migración es reversible solo si declara `revertir` y no dice lo contrario.
 const esReversible = (m) => Boolean(m.revertir) && m.reversible !== false;
 
 function crearTablaMigraciones(d) {
@@ -753,7 +666,6 @@ function crearTablaMigraciones(d) {
   `);
 }
 
-// Estado del esquema: qué migraciones constan como aplicadas y cuáles faltan.
 export function estadoMigraciones(conexion = db) {
   crearTablaMigraciones(conexion);
   const aplicadas = new Set(
@@ -763,17 +675,12 @@ export function estadoMigraciones(conexion = db) {
   return {
     aplicadas: [...aplicadas].sort((a, b) => a - b),
     faltantes: MIGRACIONES.filter((m) => !aplicadas.has(m.version)).map((m) => m.version),
-    // Una base más nueva que el código (respaldo de una versión posterior) no
-    // debe seguir adelante a ciegas: el código viejo no conoce esas columnas.
     masNueva: aplicadas.size > 0 && Math.max(...aplicadas) > ULTIMA_VERSION,
     desconocidas: [...aplicadas].filter((v) => !declaradas.has(v)).sort((a, b) => a - b),
     ultimaConocida: ULTIMA_VERSION
   };
 }
 
-// Aplica las migraciones que falten. Cada una va en su propio SAVEPOINT: si una
-// falla, esa migración se deshace por completo y las anteriores quedan aplicadas
-// (que es justo lo que permite volver a intentarlo al siguiente arranque).
 async function aplicarMigraciones(conexion) {
   crearTablaMigraciones(conexion);
   const estado = estadoMigraciones(conexion);
@@ -804,22 +711,12 @@ async function aplicarMigraciones(conexion) {
   }
 }
 
-// Deshace las migraciones aplicadas por encima de `objetivo` (0 = ninguna).
-// Se detiene en la primera irreversible, informando de cuál es y por qué, en lugar
-// de dejar el esquema a medias. Devuelve las versiones realmente revertidas.
-//
-// Todo el recorrido va dentro de un SAVEPOINT exterior: si una reversión falla a
-// medias, se deshacen también las que ya se habían hecho en esta llamada. Sin él,
-// un rollback a la 6 que fallara en la 7 dejaría la 8 revertida para siempre y
-// el mensaje "no se revirtió nada" sería falso.
 export async function revertirMigraciones(conexion, objetivo = 0, { forzar = false } = {}) {
   crearTablaMigraciones(conexion);
   const aplicadas = estadoMigraciones(conexion).aplicadas;
   const ordenadas = [...aplicadas].sort((a, b) => b - a);
   const revertidas = [];
 
-  // Deshace el SAVEPOINT exterior: deja el esquema como estaba antes de esta
-  // llamada, incluidas las reversiones que ya habían quedado a medias.
   const deshacerTodo = (err) => {
     try {
       conexion.exec("ROLLBACK TO revertir_todo");
@@ -860,57 +757,19 @@ export async function revertirMigraciones(conexion, objetivo = 0, { forzar = fal
   return revertidas;
 }
 
-// Abre la conexión inicial y aplica esquema + migraciones (después de que
-// MIGRACIONES ya está definido; de ahí su posición).
-// Barre los temporales que hubiera dejado una restauración interrumpida.
 limpiarTemporales();
 db = await abrirConexion();
 
-/* Semilla: datos de ejemplo
-   ------------------------------------------------------------------
-   Antes se cargaba una sola vez (solo si el archivo no existía) y con
-   INSERT a pelo: en una base existente no se actualizaba nunca, y si se
-   repetía a mano fallaba con "UNIQUE constraint failed".
-
-   Ahora la semilla es un proceso versionado e idempotente que se revisa en
-   cada arranque:
-     · `SEMILLA_VERSION` sube cuando el juego de datos de ejemplo cambia.
-     · Solo INSERTA lo que falta: nunca pisa un registro ya existente ni un
-       valor que el administrador haya editado.
-     · Solo completa los campos vacíos (NULL o "") de los registros que ya
-       estaban: así una versión nueva puede rellenar la ficha de un
-       laboratorio sin borrar lo que el usuario ajustó.
-     · Guarda lo que hizo en `seed_history`, así que repetirla no cambia nada
-       y se puede auditar qué versión de datos hay en cada base. */
-
 const SEMILLA_VERSION = 2;
 
-// Los datos de ejemplo (las cuentas con contraseñas conocidas, las reservas y
-// los reportes) solo se cargan cuando se pide de forma explícita con
-// LC_SEED_DEMO=1. En una instalación real no se quieren credenciales de
-// demostración en la base, así que el administrador se crea desde LC_ADMIN_*
-// (ver `sembrarAdministrador`). La ficha de laboratorios y su inventario sí se
-// siembran siempre: son la estructura del centro, no una credencial.
 const SEED_DEMO = /^(1|true|si|sí|yes|on)$/i.test(String(process.env.LC_SEED_DEMO || "").trim());
 
-// Con LC_EXIGIR_ROTACION_DEMO=1 el arranque se aborta si alguna cuenta conserva
-// la contraseña publicada del repositorio. Es una barrera para producción: en
-// desarrollo (LC_SEED_DEMO=1) las credenciales demo son esperadas y no se
-// aborta, pero igualmente se avisa.
 const EXIGIR_ROTACION_DEMO = /^(1|true|si|sí|yes|on)$/i.test(String(process.env.LC_EXIGIR_ROTACION_DEMO || "").trim());
 
-// Cuenta de administrador para instalaciones sin semilla de ejemplo. La
-// contraseña es obligatoria para poder crear la cuenta: sin ella no se inventa
-// una por defecto (sería una credencial conocida más).
 const ADMIN_USUARIO = String(process.env.LC_ADMIN_USER || "").trim();
 const ADMIN_PASSWORD = process.env.LC_ADMIN_PASSWORD || "";
 const ADMIN_EMAIL = String(process.env.LC_ADMIN_EMAIL || "").trim();
 
-// Las contraseñas de ejemplo se guardan ya hasheadas con bcrypt (coste 10):
-// así el repositorio no contiene ninguna contraseña en texto plano. Son las
-// claves documentadas del proyecto (INSUCO/Insuco1336 y los docentes demo),
-// pero como hash irreversible. `aplicarSemilla` detecta un valor que empieza
-// con "$2a$"/"$2b$" y lo inserta tal cual, sin volver a hashearlo.
 const USUARIOS = [
   { id: "INSUCO", nombre: "Administrador", apellido: "Sistema", iniciales: "AD", email: "admin@liceo.cl", password: "$2a$10$LiDipTw/DKNGZQ6Fd0YjWegPqXBnLBXhF/iesNoRGu1gdff8s62e6", rol: "admin", area: "Administración", especialidad: "Gestión de sistemas y redes", nivelAcceso: "total" },
   { id: "prof_juan", nombre: "Juan", apellido: "Pérez", iniciales: "JP", email: "jperez@liceo.cl", password: "$2a$10$QiTxzjVUWgT1Uy/FODC8fO4WOL1zl61UuJPuUNNiuBKqyL6c8giiq", rol: "programacion", area: "Programación", especialidad: "Desarrollo Web y Redes", nivelAcceso: "tecnico" },
@@ -965,57 +824,36 @@ const REPORTES = [
   }
 ];
 
-// Rellena un campo solo si está vacío. Devuelve true si cambió algo, para poder
-// informar del detalle de la actualización.
 function completarSiVacio(d, tabla, id, valores, clave) {
   const sets = [];
   const args = [];
   const pendientes = [];
   for (const [col, valor] of Object.entries(valores)) {
-    // Sin valor con qué rellenar no hay nada que hacer. Y un "" de la semilla se
-    // salta: dejaría la columna vacía para siempre, y cada arranque la
-    // "completaría" otra vez.
     if (valor === null || valor === undefined || valor === "") continue;
     sets.push(`${col} = CASE WHEN ${col} IS NULL OR ${col} = '' THEN ? ELSE ${col} END`);
     args.push(valor);
     pendientes.push(`(${col} IS NULL OR ${col} = '')`);
   }
   if (!sets.length) return false;
-  // El CASE protege cada columna por separado (rellenar un campo vacío no puede
-  // pisar el valor de otro), y el WHERE limita la sentencia a las filas con
-  // algo pendiente. El WHERE no es opcional: SQLite cuenta como modificadas
-  // todas las filas que toca la sentencia, aunque el valor quede igual, y sin
-  // él la semilla informaría "completó 150 fichas" en cada arranque.
   const info = d.prepare(
     `UPDATE ${tabla} SET ${sets.join(", ")} WHERE ${clave} = ? AND (${pendientes.join(" OR ")})`
   ).run(...args, id);
   return Number(info.changes || 0) > 0;
 }
 
-// Aplica la semilla. Es idempotente: ejecutarla N veces produce el mismo
-// resultado que ejecutarla una, y devuelve un resumen de lo que hizo.
 async function aplicarSemilla(conexion = db) {
   const resumen = { version: SEMILLA_VERSION, labs: 0, equipos: 0, usuarios: 0, admin: 0, agenda: 0, reportes: 0, completados: 0 };
 
-  // Los hashes se calculan ANTES de abrir la transacción. Hashear 7 contraseñas
-  // con bcrypt son ~600 ms de CPU: dejarlo dentro de la transacción mantendría
-  // una escritura abierta mientras se cede el event loop, y cualquier otra
-  // consulta que llegara en ese rato se encontraría con la base bloqueada.
   const existeUsuario = conexion.prepare("SELECT id FROM usuarios WHERE id = ?");
   const passwords = new Map();
   if (SEED_DEMO) {
     for (const u of USUARIOS) {
       if (existeUsuario.get(u.id)) continue;
-      // Un valor ya hasheado (semilla) se usa tal cual; solo se hashea el texto
-      // plano, por si alguien agrega una cuenta de ejemplo sin hashear.
       const yaHasheado = typeof u.password === "string" && /^\$2[aby]\$/.test(u.password);
       passwords.set(u.id, yaHasheado ? u.password : await bcrypt.hash(u.password, 10));
     }
   }
 
-  // Sin semilla de ejemplo, la base de una instalación nueva se quedaría sin
-  // administrador. Se prepara la cuenta a partir de LC_ADMIN_* (el hash se
-  // calcula antes de la transacción, por el mismo motivo que los de ejemplo).
   let adminHash = null;
   if (!SEED_DEMO && ADMIN_PASSWORD) {
     const hayAdminActivo = conexion.prepare("SELECT id FROM usuarios WHERE rol = 'admin' AND activo = 1").get();
@@ -1064,8 +902,6 @@ async function aplicarSemilla(conexion = db) {
         pos_x: l.posicion.x, pos_y: l.posicion.y, pos_w: l.posicion.w, pos_h: l.posicion.h
       };
       if (hayLab.get(l.id)) {
-        // El laboratorio ya existe: solo se completan los campos vacíos, nunca
-        // se pisa lo que el administrador haya corregido.
         if (completarSiVacio(conexion, "laboratorios", l.id, {
           nombre: l.nombre, sala: l.sala, ubicacion: l.ubicacion, so: l.so,
           procesador: l.procesador, ram: l.ram, almacenamiento: l.almacenamiento,
@@ -1079,8 +915,6 @@ async function aplicarSemilla(conexion = db) {
         resumen.labs++;
       }
 
-      // Los equipos se completan (nunca se pisa) para que la lista cuadre con
-      // la cantidad declarada, sin tocar lo que el usuario ya editó.
       for (let i = 1; i <= l.equipos; i++) {
         const eq = datosEquipo(l, i);
         if (hayEquipo.get(eq.id)) {
@@ -1099,8 +933,6 @@ async function aplicarSemilla(conexion = db) {
     if (SEED_DEMO) {
       for (const u of USUARIOS) {
         if (hayUsuario.get(u.id)) {
-          // Una cuenta existente solo se completa (nombre, correo, rol vacío);
-          // su contraseña y su rol activo nunca se tocan.
           if (completarSiVacio(conexion, "usuarios", u.id, {
             nombre: u.nombre, apellido: u.apellido, iniciales: u.iniciales,
             email: u.email, area: u.area, especialidad: u.especialidad
@@ -1115,8 +947,6 @@ async function aplicarSemilla(conexion = db) {
         resumen.usuarios++;
       }
     } else if (adminHash) {
-      // Instalación sin datos de ejemplo: se crea la cuenta de administrador
-      // indicada por LC_ADMIN_* para poder entrar por primera vez.
       const idAdmin = ADMIN_USUARIO || "INSUCO";
       insertUsr.run({
         id: idAdmin, nombre: "Administrador", apellido: "Sistema", iniciales: "AD",
@@ -1145,8 +975,6 @@ async function aplicarSemilla(conexion = db) {
       resumen.reportes++;
     }
 
-    // La configuración solo se crea si falta; una vez creada la gestiona el
-    // administrador desde Configuración y la semilla no la pisa nunca.
     if (!conexion.prepare("SELECT id FROM config WHERE id = 1").get()) {
       conexion.prepare("INSERT INTO config (id, data) VALUES (1, ?)").run(JSON.stringify(CONFIG_DEFAULT));
     }
@@ -1164,11 +992,6 @@ async function aplicarSemilla(conexion = db) {
   return resumen;
 }
 
-// Devuelve las cuentas de ejemplo que siguen con la contraseña publicada del
-// repositorio. Se comparan hashes (nunca se muestran) porque son credenciales
-// conocidas: en una instalación real hay que cambiarlas o desactivarlas.
-// Se calcula en cada llamada para que /api/salud refleje el estado actual,
-// incluso después de restaurar un respaldo.
 export function cuentasDemoSinRotar(conexion = db) {
   if (!conexion) return [];
   const pendientes = [];
@@ -1182,9 +1005,6 @@ export function cuentasDemoSinRotar(conexion = db) {
   return pendientes;
 }
 
-// Avisa (o aborta, con LC_EXIGIR_ROTACION_DEMO=1) si quedan credenciales demo
-// sin rotar. Se ejecuta siempre, también con LC_SEED_DEMO=1: en desarrollo el
-// aviso recuerda que esa base no debe usarse en producción.
 function avisarCuentasDeEjemplo() {
   const pendientes = cuentasDemoSinRotar();
   if (!pendientes.length) return pendientes;
@@ -1220,8 +1040,6 @@ if (resumenSemilla.labs || resumenSemilla.usuarios || resumenSemilla.admin || re
   );
 }
 
-// Sin semilla de ejemplo, la instalación tiene que quedar con un administrador
-// utilizable y sin credenciales de demostración conocidas.
 if (!SEED_DEMO) {
   if (!db.prepare("SELECT id FROM usuarios WHERE rol = 'admin' AND activo = 1").get()) {
     console.warn(
@@ -1232,8 +1050,6 @@ if (!SEED_DEMO) {
   }
 }
 
-// La detección de credenciales demo se ejecuta siempre, no solo cuando la
-// semilla está desactivada: una base antigua puede conservar los hashes.
 avisarCuentasDeEjemplo();
 
 export { DB_PATH, DB_DIR, db, abrirConexion, MIGRACIONES, SEMILLA_VERSION, aplicarSemilla };
@@ -1242,15 +1058,11 @@ function tieneLaTabla(d, tabla) {
   return Boolean(d.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tabla));
 }
 
-// Mantiene acotadas las tablas que crecen sin límite (auditoría, sesiones,
-// notificaciones, solicitudes y enlaces de reseteo). Es idempotente: ejecutarla
-// dos veces seguidas deja exactamente lo mismo. Devuelve lo que borró.
 export function podarTablas(conexion = db) {
   const aplicadas = new Set(estadoMigraciones(conexion).aplicadas);
   const borradas = {};
 
   if (aplicadas.has(5) && tieneLaTabla(conexion, "solicitudes_especialidad")) {
-    // Índice de apoyo para la poda por usuario (idempotente).
     conexion.exec("CREATE INDEX IF NOT EXISTS idx_solicitudes_usuario ON solicitudes_especialidad(usuario_id, id)");
   }
   if (aplicadas.has(8) && tieneLaTabla(conexion, "contrasena_resets")) {
@@ -1276,7 +1088,6 @@ export function podarTablas(conexion = db) {
   if (aplicadas.has(8) && tieneLaTabla(conexion, "contrasena_resets")) {
     const info = conexion.prepare("DELETE FROM contrasena_resets WHERE expira_en < ?").run(Date.now());
     borradas.resetsVencidos = Number(info.changes || 0);
-    // Un usuario solo puede tener un enlace vivo: se acota por si acaso.
     const extra = conexion.prepare(`
       DELETE FROM contrasena_resets
       WHERE token NOT IN (
@@ -1286,7 +1097,6 @@ export function podarTablas(conexion = db) {
     borradas.resetsSobrantes = Number(extra.changes || 0);
   }
   if (aplicadas.has(5) && tieneLaTabla(conexion, "solicitudes_especialidad")) {
-    // Se conservan las 100 más recientes de cada usuario y todas las pendientes.
     const info = conexion.prepare(`
       DELETE FROM solicitudes_especialidad
       WHERE estado != 'pendiente'
@@ -1296,9 +1106,6 @@ export function podarTablas(conexion = db) {
         )
     `).run();
     borradas.solicitudes = Number(info.changes || 0);
-    // Tope por usuario sobre lo ya resuelto. El filtro de estado tiene que
-    // repetirse en el sub-SELECT: sin él, un usuario con más de 100 filas
-    // pierde las pendientes más antiguas, que son justo las que hay que mirar.
     const porUsuario = conexion.prepare(`
       DELETE FROM solicitudes_especialidad
       WHERE estado != 'pendiente'
@@ -1315,9 +1122,6 @@ export function podarTablas(conexion = db) {
   return total > 0 ? borradas : null;
 }
 
-// En Windows, SQLite puede reportar "database is locked" o EPERM de forma
-// transitoria justo tras cerrar/reabrir la conexión. Se reintenta con una espera
-// real (no una espera activa), para no bloquear el event loop mientras se reintenta.
 function esErrorTransitorio(err) {
   const mensaje = String(err?.message || err).toLowerCase();
   return mensaje.includes("locked") || mensaje.includes("eperm") || mensaje.includes("permission denied");
@@ -1339,14 +1143,10 @@ async function reintentar(fn, intentos = 6, pausaMs = 150) {
   throw ultimoError;
 }
 
-// Tablas que la aplicación necesita para funcionar: un respaldo que no las
-// tenga no es una base de LabControl y no debe sustituir a la actual.
 const TABLAS_REQUERIDAS = [
   "laboratorios", "equipos", "usuarios", "agenda", "reportes", "notificaciones", "config"
 ];
 
-// Abre una copia del archivo recibido en solo lectura y la somete a las
-// comprobaciones de estructura, sin tocar la base que está en servicio.
 function validarCopia(ruta) {
   let d;
   try {
@@ -1362,7 +1162,7 @@ function validarCopia(ruta) {
     }
     return true;
   } finally {
-    try { d?.close(); } catch { /* ya cerrada */ }
+    try { d?.close(); } catch {}
   }
 }
 
@@ -1372,13 +1172,6 @@ function errorValidacion(mensaje) {
   return err;
 }
 
-// Crea una instantánea consistente de la base en un archivo temporal.
-//
-// `VACUUM INTO` copia la base dentro de una única transacción de lectura, así
-// que la copia no puede quedar a medias aunque coincida con una escritura. Se
-// verifica con PRAGMA integrity_check antes de entregarla. El llamador es
-// responsable de borrar el archivo cuando termine de servirlo; si el proceso
-// se interrumpe, `limpiarTemporales()` lo barre en el siguiente arranque.
 export function crearCopiaConsistente() {
   if (!baseDisponible()) {
     const err = new Error("La base de datos se está restaurando; inténtalo de nuevo en unos segundos");
@@ -1388,7 +1181,6 @@ export function crearCopiaConsistente() {
 
   const destino = rutaTemporal(`respaldo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.db`);
   try {
-    // La ruta se interpola en SQL: se escapan las comillas simples.
     db.exec(`VACUUM INTO '${destino.replace(/'/g, "''")}'`);
 
     const copia = new DatabaseSync(destino);
@@ -1399,19 +1191,11 @@ export function crearCopiaConsistente() {
     }
     return destino;
   } catch (err) {
-    try { fs.rmSync(destino, { force: true }); } catch { /* puede estar en uso */ }
+    try { fs.rmSync(destino, { force: true }); } catch {}
     throw err;
   }
 }
 
-// Sustituye la base por la de un respaldo subido (buffer con el contenido del
-// archivo .db).
-//
-// El orden importa: primero se valida una COPIA del archivo recibido (cabecera,
-// integridad y esquema) mientras la base en servicio sigue abierta; solo si esa
-// copia es válida se cierra la conexión y se intercambian los archivos. Así un
-// respaldo corrupto no deja el sistema sin base, y siempre queda una única copia
-// `.prev` de la anterior (idempotente: no se acumulan copias).
 export async function reemplazarBaseDesdeBuffer(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 100) {
     throw errorValidacion("es demasiado pequeño");
@@ -1433,15 +1217,8 @@ export async function reemplazarBaseDesdeBuffer(buffer) {
       throw errorValidacion(err?.message || "no se pudo leer");
     }
 
-    // La base en servicio sigue abierta mientras se prepara la nueva: si algo
-    // falla aquí, el sistema nunca se queda sin responder.
     const nueva = await reintentar(() => abrirConexion(temporal));
 
-    // Cerrar la conexión actual (con journal DELETE cada transacción ya quedó
-    // volcada al archivo principal y no hay -wal/-shm que queden colgando en
-    // Windows). `db` pasa a null antes de cerrar: si el intercambio de archivos
-    // falla más abajo, el bloque catch sabe que hay que reabrir, y no que ya hay
-    // una conexión sana en pie.
     const anterior = db;
     db = null;
     anterior.close();
@@ -1453,14 +1230,9 @@ export async function reemplazarBaseDesdeBuffer(buffer) {
 
     db = await reintentar(() => abrirConexion());
 
-    // La base restaurada puede venir de otra versión: se le aplican las
-    // migraciones que le falten (ya lo hizo abrirConexion) y se invalidan las
-    // sesiones de la base anterior, que ya no sirven.
     if (tablaExiste(db, "refresh_tokens")) {
       db.prepare("UPDATE refresh_tokens SET revocado = 1 WHERE revocado = 0").run();
     }
-    // El estado en memoria del servidor (desafíos 2FA) pertenece a la base
-    // anterior: se purga para que no quede ningún desafío vivo.
     for (const fn of ganchosAlRestaurar) {
       try { fn(); } catch (err) {
         console.error("Error en un gancho de restauración:", err?.message || err);
@@ -1468,13 +1240,8 @@ export async function reemplazarBaseDesdeBuffer(buffer) {
     }
     return { rutaAnterior: prev, versionEsquema: estadoMigraciones(db).aplicadas };
   } catch (err) {
-    // Cualquier fallo deja la base anterior en su sitio.
-    try { fs.rmSync(temporal, { force: true }); } catch { /* ya no existe */ }
+    try { fs.rmSync(temporal, { force: true }); } catch {}
     if (db === null) {
-      // La conexión se cerró antes de fallar, así que hay que reabrir. Se
-      // prefiere la copia `.prev`, que se sabe válida, y en todo caso se
-      // valida el archivo antes de adoptarlo: si DB_PATH quedó a medias, abrirlo
-      // tal cual crearía una base vacía con el esquema puesto y parecería sano.
       let recuperada = false;
       for (const ruta of [prev, DB_PATH]) {
         if (!fs.existsSync(ruta)) continue;

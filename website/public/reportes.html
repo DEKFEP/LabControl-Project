@@ -14,8 +14,8 @@
 <link rel="apple-touch-icon" href="img/labcontrol-icon.png" />
 <link rel="manifest" href="manifest.webmanifest" />
 <title>Reportes · LabControl</title>
-<link rel="stylesheet" href="css/style.css?v=4.9.0" />
-<script src="js/theme.js?v=4.9.0"></script>
+<link rel="stylesheet" href="css/style.css?v=4.9" />
+<script src="js/theme.js?v=4.9"></script>
 </head>
 <body>
 <a class="skip-nav" href="#main-content">Saltar al contenido</a>
@@ -42,10 +42,8 @@
       <button class="btn btn--primary" id="btn-nuevo-reporte">+ Generar reporte</button>
     </header>
 
-    <!-- Lista resumida de reportes -->
     <div class="rep-grid" id="rep-grid"></div>
 
-    <!-- Vista detalle de un reporte -->
     <div id="vista-reporte" style="display:none;margin-top:20px">
       <div style="margin-bottom:12px">
         <button class="btn" id="btn-volver-rep">← Volver a reportes</button>
@@ -72,12 +70,10 @@
   </main>
 </div>
 
-<!-- Visor de imágenes adjuntas -->
 <div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center;cursor:zoom-out;padding:24px">
   <img id="lightbox-img" alt="" style="max-width:min(900px,92vw);max-height:88vh;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.5)" />
 </div>
 
-<!-- Modal nuevo / editar reporte -->
 <div class="modal-overlay" id="modal-reporte" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-rep-titulo">
   <div class="modal" style="max-width:560px">
     <div class="modal__header">
@@ -134,9 +130,9 @@
   </div>
 </div>
 
-<script type="module" src="js/data.js?v=4.9.0"></script>
-<script src="js/vendor/lucide.min.js?v=4.9.0"></script>
-<script type="module" src="js/app.js?v=4.9.0"></script>
-<script type="module" src="js/reportes.js?v=4.9.0"></script>
+<script type="module" src="js/data.js?v=4.9"></script>
+<script src="js/vendor/lucide.min.js?v=4.9"></script>
+<script type="module" src="js/app.js?v=4.9"></script>
+<script type="module" src="js/reportes.js?v=4.9"></script>
 </body>
 </html>

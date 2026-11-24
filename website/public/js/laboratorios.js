@@ -1,7 +1,5 @@
-/* Imports (ES modules) */
 import { AUTH, ESTADOS, actualizarEstadoLaboratorio, cargarAgenda, cargarLaboratorios, cargarUsuarios } from "./data.js";
 import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, renderLabGrid, renderSidebar, showToast } from "./app.js";
-
 
   await renderSidebar("laboratorios");
   initTabs();
@@ -20,7 +18,6 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
     }
   }).catch(() => showToast("No se pudieron cargar los datos.", "error"));
 
-  // Filtros
   ["filtro-busqueda", "filtro-estado"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("input", filtrarLabs);
@@ -55,7 +52,6 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
       b.className   = `badge badge--${lab.estado}`;
     });
 
-    // Info general
     document.getElementById("detalle-info-general").innerHTML = `
       <div><dt>Sala</dt><dd>${esc(lab.sala)}</dd></div>
       <div><dt>Ubicación</dt><dd>${esc(lab.ubicacion)}</dd></div>
@@ -65,7 +61,6 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
       <div style="grid-column:1/-1"><dt>Descripción</dt><dd style="font-weight:400">${esc(lab.descripcion)}</dd></div>
     `;
 
-    // Hardware — solo si tiene permisos técnicos
     const hardwareEl   = document.getElementById("detalle-info-hardware");
     const lockEl       = document.getElementById("bloque-tecnico-lock");
     if (AUTH.puedeVerTecnico()) {
@@ -83,13 +78,11 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
       lockEl.style.display = "flex";
     }
 
-    // Servicios (un laboratorio puede no tener la lista en datos antiguos).
     const servicios = Array.isArray(lab.servicios) ? lab.servicios : [];
     document.getElementById("detalle-servicios").innerHTML =
       servicios.map((s) => `<li><i data-lucide="check"></i>${esc(s)}</li>`).join("") ||
       "<li>Sin servicios registrados</li>";
 
-    // Agenda del laboratorio
     cargarAgenda().then((agenda) => {
       const reservas = agenda.filter((r) => r.labId === lab.id);
       const tbody = document.getElementById("detalle-agenda");
@@ -109,11 +102,9 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
       }).join("");
     }).catch(() => {});
 
-    // Enlace de equipos
     document.getElementById("btn-ver-equipos").href = `equipos?lab=${lab.id}`;
   }
 
-  // Modal estado
   document.getElementById("btn-cambiar-estado")?.addEventListener("click", () => {
     const lab = labsCache.find((l) => l.id === Number(idSeleccionado));
     if (lab) document.getElementById("select-estado").value = lab.estado;
@@ -143,7 +134,6 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
       cerrarModal(document.getElementById("modal-estado"));
   });
 
-  // Lightbox de imágenes de laboratorios
   const lightbox = document.getElementById("lightbox-lab");
   const lightboxImg = document.getElementById("lightbox-lab-img");
   const lightboxCounter = document.getElementById("lightbox-lab-counter");
@@ -198,7 +188,6 @@ import { abrirModal, cerrarModal, esc, formatFecha, getQueryParam, initTabs, ren
     if (e.key === "ArrowRight") navLightbox(1);
   });
 
-  // Delegación de eventos para las imágenes de las tarjetas
   document.getElementById("lab-grid").addEventListener("click", (e) => {
     const img = e.target.closest(".lab-card__img");
     if (img) {

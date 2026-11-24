@@ -14,19 +14,17 @@
 <link rel="apple-touch-icon" href="img/labcontrol-icon.png" />
 <link rel="manifest" href="manifest.webmanifest" />
 <title>Iniciar sesión · LabControl</title>
-<link rel="stylesheet" href="css/style.css?v=4.9.0" />
-<script src="js/theme.js?v=4.9.0"></script>
+<link rel="stylesheet" href="css/style.css?v=4.9" />
+<script src="js/theme.js?v=4.9"></script>
 </head>
 <body class="login-body" style="padding-top:20px">
 <a class="skip-nav" href="#main-content">Saltar al contenido</a>
 <main class="main-content" id="main-content" role="main" tabindex="-1">
 <div class="login-card">
-  <!-- ===== Vista 1: Iniciar sesión ===== -->
   <section id="vista-login" aria-label="Iniciar sesión">
     <h1 class="login-title">Iniciar sesión</h1>
     <p class="login-desc">Ingresa con tu cuenta institucional</p>
 
-    <!-- novalidate: el paso 2 oculta sus campos required (la validación se hace en login.js) -->
     <form id="login-form" novalidate>
       <div id="paso-1">
         <div class="form-group">
@@ -79,7 +77,6 @@
     </div>
   </section>
 
-  <!-- ===== Vista 2: Crear cuenta ===== -->
   <section id="vista-registrar" class="login-alt" style="display:none" aria-label="Registrar">
     <h1 class="login-title">Registrar</h1>
     <p class="login-desc">Regístrate con tus datos institucionales</p>
@@ -138,7 +135,6 @@
     </form>
   </section>
 
-  <!-- ===== Vista 3: Recuperar contraseña ===== -->
   <section id="vista-recuperar" class="login-alt" style="display:none" aria-label="Recuperar contraseña">
     <h2 class="login-title">Recuperar contraseña</h2>
     <p class="login-desc" id="rec-desc">Ingresa tu correo y te enviaremos un enlace para restablecerla.</p>
@@ -176,14 +172,13 @@
   </section>
 </div>
 
-<!-- Modal de Términos de uso y Política de privacidad -->
 <div class="modal-overlay" id="modal-terminos" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-terminos-titulo">
   <div class="modal">
     <div class="modal__header">
       <div class="modal__title" id="modal-terminos-titulo">Términos de uso</div>
       <button type="button" class="modal__close" data-cerrar-modal aria-label="Cerrar">✕</button>
     </div>
-    <div class="modal__body terminos-cuerpo" id="modal-terminos-cuerpo"><!-- contenido inyectado por login.js --></div>
+    <div class="modal__body terminos-cuerpo" id="modal-terminos-cuerpo"></div>
   </div>
 </div>
 
@@ -193,7 +188,7 @@
 </div>
 </main>
 
-<script type="module" src="js/data.js?v=4.9.0"></script>
-<script type="module" src="js/login.js?v=4.9.0"></script>
+<script type="module" src="js/data.js?v=4.9"></script>
+<script type="module" src="js/login.js?v=4.9"></script>
 </body>
 </html>

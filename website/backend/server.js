@@ -1,6 +1,3 @@
-/* server.js — API REST (Express + SQLite) y sirve el sitio de public/.
-   Arranque: cd backend && npm install && npm start  (http://localhost:3000) */
-
 import path from "node:path";
 import fs from "node:fs";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -22,7 +19,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// `node:sqlite` solo se importa sin flag a partir de Node 22.13 (M-11).
 {
   const [mayor, menor] = process.versions.node.split(".").map(Number);
   if (mayor < 22 || (mayor === 22 && menor < 13)) {
@@ -31,40 +27,26 @@ const PORT = process.env.PORT || 3000;
   }
 }
 
-// Clave JWT — en producción usar variable de entorno; si no existe se usa una
-// clave persistente guardada en la carpeta de datos, de modo que las sesiones
-// sobrevivan a los reinicios del servidor (no una aleatoria por arranque).
 function cargarJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
   const archivo = path.join(DB_DIR, ".jwt-secret");
   try {
     const existente = fs.readFileSync(archivo, "utf8").trim();
     if (existente) return existente;
-  } catch { /* aún no existe */ }
+  } catch {}
   const generado = randomBytes(48).toString("hex");
   try {
     fs.mkdirSync(DB_DIR, { recursive: true });
     fs.writeFileSync(archivo, generado);
-  } catch { /* sin persistencia: se descarta al reiniciar */ }
+  } catch {}
   return generado;
 }
 const JWT_SECRET = cargarJwtSecret();
 const JWT_REFRESH_EXPIRES = "30d";
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-// Política de contraseñas: longitud mínima única para todos los caminos que
-// fijan una contraseña (registro, alta de usuario, perfil, cambio y reseteo),
-// más variedad mínima (minúscula, mayúscula y número) y una lista de
-// contraseñas comunes. La variedad no exige símbolos para no invalidar la
-// cuenta administradora documentada; la longitud sí se sube a 10.
 const MIN_PASSWORD = 10;
-// bcryptjs ignora los bytes posteriores al 72: dos contraseñas distintas podían
-// ser equivalentes si compartían los primeros 72 bytes (B-03). Se mide en bytes
-// UTF-8, no en caracteres.
 const MAX_PASSWORD_BYTES = 72;
-// Tope legacy solo para el login: cuentas creadas antes del cambio pueden tener
-// claves más largas y deben seguir entrando si sus primeros 72 bytes coinciden.
 const MAX_PASSWORD_LOGIN = 200;
-// Contraseñas comunes/prohibidas; se comparan en minúsculas.
 const PASSWORDS_PROHIBIDAS = new Set([
   "1234567890", "123456789", "contrasena", "contraseña", "password", "password1",
   "password123", "password1234", "qwertyuiop", "qwerty12345", "labcontrol",
@@ -72,7 +54,6 @@ const PASSWORDS_PROHIBIDAS = new Set([
   "insuco1336", "insuco12345"
 ]);
 
-// Devuelve el mensaje de error si la contraseña no cumple la política, o null.
 function errorPassword(pw) {
   if (typeof pw !== "string" || pw.length === 0) return "La contraseña es obligatoria";
   if (pw.length < MIN_PASSWORD) return `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres`;
@@ -86,7 +67,6 @@ function errorPassword(pw) {
   return null;
 }
 
-// Encadena la política a express-validator para un campo obligatorio.
 function reglaPassword(campo) {
   return body(campo)
     .isLength({ min: MIN_PASSWORD })
@@ -99,15 +79,8 @@ function reglaPassword(campo) {
     });
 }
 
-// Token opcional: si LC_SALUD_TOKEN está definido, /api/salud revela la versión
-// y el nombre del servicio solo a quien lo presente en `x-lc-salud-token`.
 const SALUD_TOKEN = process.env.LC_SALUD_TOKEN || "";
 
-// Registro público de cuentas. Por seguridad nace CERRADO: solo se habilita si
-// el despliegue declara los dominios de correo admitidos en LC_REGISTRO_DOMINIOS
-// (lista separada por comas, con o sin la arroba; p. ej. "liceo.cl,insuco.cl").
-// Aunque el dominio esté admitido, la cuenta queda INACTIVA hasta que un
-// administrador la apruebe desde Usuarios.
 const REGISTRO_DOMINIOS = String(process.env.LC_REGISTRO_DOMINIOS || "")
   .split(",")
   .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
@@ -118,24 +91,11 @@ if (!process.env.JWT_SECRET) {
   console.log("  INFO: Las sesiones sobreviven a los reinicios; en producción define JWT_SECRET como variable de entorno.");
 }
 
-/* Seguridad */
-
-// Proxy inverso: sin esto, `req.ip` (rate limiting y auditoría) y `req.protocol`
-// son los del proxy y no los del cliente real. Define LC_TRUST_PROXY=1 (o el
-// número de saltos de la cadena) solo cuando la app está detrás de un proxy.
 if (process.env.LC_TRUST_PROXY) {
   const saltos = Number(process.env.LC_TRUST_PROXY);
   app.set("trust proxy", Number.isInteger(saltos) && saltos > 0 ? saltos : true);
 }
 
-// La web vive en Cloudflare Pages: su Function (`functions/api/[[path]].js`)
-// reenvía /api a esta API, así que sin ayuda la IP que ve el rate limiting y la
-// auditoría es la del proxy, no la del navegador. `x-forwarded-for` no sirve:
-// el hosting (Railway) la reescribe con la de su propio borde. Por eso la
-// Function envía la IP real que sí conoce (cf-connecting-ip) firmada con
-// LC_PROXY_SECRET; aquí solo se acepta si el secreto coincide (comparación en
-// tiempo constante). Un cliente que llegue directo a la API no puede falsear la
-// IP porque desconoce el secreto. Sin LC_PROXY_SECRET se usa req.ip normal.
 function igualSeguro(a, b) {
   const ba = Buffer.from(String(a));
   const bb = Buffer.from(String(b));
@@ -147,7 +107,7 @@ function ipClienteAnclada(req) {
   const recibido = req.headers["x-lc-proxy-secret"];
   if (!recibido || !igualSeguro(recibido, secreto)) return null;
   const ip = String(req.headers["x-lc-client-ip"] || "").trim();
-  if (!ip || ip.length > 45) return null; // IPv4 (15) e IPv6 (hasta 45)
+  if (!ip || ip.length > 45) return null;
   return ip;
 }
 app.use((req, _res, next) => {
@@ -156,19 +116,12 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Headers de seguridad (CSP, X-Frame-Options, HSTS, etc.)
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       scriptSrcAttr: ["'none'"],
-      // Los estilos se separan (CSP3): `style-src-elem` cubre las hojas y los
-      // <style> (no hay ninguno en línea) y se deja SIN `unsafe-inline`, de modo
-      // que inyectar una hoja o un <style> queda bloqueado. `style-src-attr`
-      // mantiene `unsafe-inline` porque la interfaz usa atributos style="" (los
-      // generados dinámicamente no se pueden clasificar). `style-src` es el
-      // respaldo para navegadores antiguos.
       styleSrc: ["'self'", "https://fonts.googleapis.com"],
       styleSrcElem: ["'self'", "https://fonts.googleapis.com"],
       styleSrcAttr: ["'unsafe-inline'"],
@@ -185,22 +138,16 @@ app.use(helmet({
   referrerPolicy: { policy: "same-origin" }
 }));
 
-// Helmet 7/8 no reconoce `permissionsPolicy` como opción (la ignoraba en
-// silencio): se emite explícitamente, igual que en _headers de Cloudflare (M-10).
 app.use((_req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   next();
 });
 
-// Respuestas de la API: no almacenables en caché (datos sensibles de sesión).
 app.use("/api", (req, res, next) => {
   res.set("Cache-Control", "no-store");
   next();
 });
 
-// Mientras se restaura un respaldo la conexión se cierra un instante. En esa
-// ventana se responde 503 (reintentable) en lugar de dejar que la consulta
-// reviente con un 500 por "database is not open".
 app.use("/api", (req, res, next) => {
   if (!baseDisponible()) {
     return res.status(503).json({ error: "La base de datos se está restaurando. Intenta de nuevo en un momento." });
@@ -208,7 +155,6 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
-// CORS — permitir mismo origen (frontend servido por el mismo server)
 app.use(cors({
   origin: process.env.ORIGIN ? process.env.ORIGIN.split(",") : false,
   credentials: true,
@@ -216,13 +162,10 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Límite de body (reportes con adjuntos base64). Acotado para evitar que un
-// body gigante agote la memoria del proceso; el backup se recibe aparte (raw).
 app.use(express.json({ limit: "8mb" }));
 
-// Rate limiting general (los tests e2e pueden ampliarlo con LC_API_LIMIT).
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
+  windowMs: 15 * 60 * 1000,
   max: process.env.LC_API_LIMIT ? Number(process.env.LC_API_LIMIT) : 200,
   standardHeaders: true,
   legacyHeaders: false,
@@ -230,10 +173,6 @@ const generalLimiter = rateLimit({
 });
 app.use("/api/", generalLimiter);
 
-// Rate limiting adicional en rutas de escritura (evita abusos de creación/PATCH/
-// borrado). Solo cuenta los métodos de escritura: antes también contaba los GET,
-// así que el sondeo de notificaciones y las lecturas de esas rutas consumían la
-// cuota de escritura sin motivo. Las lecturas quedan cubiertas por generalLimiter.
 const escrituraLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: process.env.LC_ESCRITURA_LIMIT ? Number(process.env.LC_ESCRITURA_LIMIT) : 60,
@@ -244,9 +183,6 @@ const escrituraLimiter = rateLimit({
 });
 app.use(["/api/usuarios", "/api/agenda", "/api/reportes", "/api/config", "/api/notificaciones", "/api/laboratorios", "/api/solicitudes-especialidad"], escrituraLimiter);
 
-// Rate limiting estricto en login (por IP y por cuenta: bloquea fuerza bruta
-// por usuario aunque las IP roten). LC_LOGIN_LIMIT permite ampliarlo en los
-// tests e2e, que inician sesión muchas veces en la misma corrida.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.LC_LOGIN_LIMIT) || 10,
@@ -257,7 +193,6 @@ const loginLimiter = rateLimit({
   message: { error: "Demasiados intentos de inicio de sesión. Espera 15 minutos." }
 });
 
-// Registro de cuentas nuevas: pocas cuentas por hora e IP (evita spam de cuentas).
 const registroLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: Number(process.env.LC_REGISTRO_LIMIT) || 10,
@@ -265,14 +200,7 @@ const registroLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Demasiados intentos de registro. Intenta de nuevo más tarde." }
 });
-// El límite de registro se aplica solo al POST (crear cuenta).
 
-// Recuperación de contraseña: por IP y por cuenta (evita abuso del envío de correos).
-// El límite cubre solo la SOLICITUD (la que dispara el envío de correo). Con
-// `app.use` también alcanzaba a `/api/recuperar-contrasena/:token`, donde no hay
-// `email` en el cuerpo: la cuota pasaba a ser 5 por hora y por IP para todo el
-// flujo de restablecimiento, dejando sin poder cambiar la contraseña a usuarios
-// legítimos que comparten salida a internet.
 const resetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: Number(process.env.LC_RESET_LIMIT) || 5,
@@ -284,7 +212,6 @@ const resetLimiter = rateLimit({
 });
 app.post("/api/recuperar-contrasena", resetLimiter);
 
-// Rate limiting en renovación/cierre de sesión (token rotation es sensible).
 const refreshLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 120,
@@ -293,10 +220,6 @@ const refreshLimiter = rateLimit({
   message: { error: "Demasiadas renovaciones de sesión. Intenta de nuevo en 15 minutos." }
 });
 
-// Confirmación de secretos: códigos TOTP del 2FA y contraseña actual del cambio
-// de contraseña. Son la última barrera cuando el atacante ya tiene un token
-// válido, así que admiten muy pocos intentos por cuenta (un TOTP de 6 dígitos
-// se fuerza en minutos sin este límite). LC_SENSIBLES_LIMIT lo amplía en tests.
 const sensiblesLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.LC_SENSIBLES_LIMIT) || 10,
@@ -307,12 +230,9 @@ const sensiblesLimiter = rateLimit({
   message: { error: "Demasiados intentos de verificación. Espera 15 minutos." }
 });
 
-/* Autenticación y autorización */
-// Verifica el JWT del header y deja el payload en req.user.
 function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   let token = authHeader && authHeader.split(" ")[1];
-  // Sin Bearer (navegador), el token de acceso viaja en la cookie HttpOnly.
   if (!token) token = leerCookie(req, COOKIE_ACCESO);
   if (!token) return res.status(401).json({ error: "Token de autenticación requerido" });
 
@@ -325,15 +245,10 @@ function authenticateToken(req, res, next) {
     }
     return res.status(403).json({ error: "Token inválido" });
   }
-  // Solo los tokens de acceso pasan; un token de refresco jamás autentica.
   if (decoded.tipo && decoded.tipo !== "access") {
     return res.status(403).json({ error: "Token inválido" });
   }
 
-  // El token no es la fuente de verdad: la cuenta se revalida en la base en
-  // cada petición. Así una baja, una desactivación o un cambio de rol surte
-  // efecto de inmediato y un JWT vivo no conserva los permisos que tenía al
-  // emitirse (p. ej. un administrador degradado deja de ser administrador).
   const cuenta = db.prepare(
     "SELECT id, nombre, apellido, iniciales, rol, nivel_acceso, activo FROM usuarios WHERE id = ?"
   ).get(decoded.id);
@@ -352,7 +267,6 @@ function authenticateToken(req, res, next) {
   next();
 }
 
-// Solo admin
 function requireAdmin(req, res, next) {
   if (req.user?.rol !== "admin") {
     return res.status(403).json({ error: "Se requieren permisos de administrador" });
@@ -360,14 +274,6 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-/* Cookies de sesión (HttpOnly)
-   ------------------------------------------------------------------
-   El token de acceso y el de refresco viajan en cookies HttpOnly, de modo
-   que un XSS no pueda leerlos (ni del almacenamiento ni de una respuesta del
-   servidor). Los clientes de API sin navegador (curl, tests, integraciones)
-   siguen recibiendo los tokens en el cuerpo y autenticándose con Bearer, por
-   compatibilidad. La cookie de acceso no lleva Max-Age (es de sesión y el JWT
-   ya caduca); la de refresco dura 30 días como el propio token. */
 const COOKIE_ACCESO = "lc_at";
 const COOKIE_REFRESCO = "lc_rt";
 
@@ -390,7 +296,6 @@ function leerCookie(req, nombre) {
   return leerCookies(req)[nombre] || null;
 }
 
-// ¿La conexión llega al usuario por HTTPS? Necesario para marcar Secure.
 function peticionSegura(req) {
   if (String(process.env.LC_PUBLIC_URL || "").trim().startsWith("https://")) return true;
   if (req.secure) return true;
@@ -413,14 +318,10 @@ function limpiarCookiesSesion(req, res) {
   res.clearCookie(COOKIE_REFRESCO, opciones);
 }
 
-// Un navegador (fetch/XHR) envía las cabeceras Sec-Fetch-*; un cliente de API
-// no. Solo a esos últimos se les devuelven los tokens en el JSON.
 function incluirTokensEnCuerpo(req) {
   return !(req.headers["sec-fetch-mode"] || req.headers["sec-fetch-site"]);
 }
 
-// Entrega la sesión: fija las cookies y, si es un cliente de API, añade los
-// tokens al cuerpo (compatibilidad con Bearer / tests).
 function responderSesion(req, res, token, refreshToken, usuario) {
   fijarCookiesSesion(req, res, token, refreshToken);
   const cuerpo = { usuario };
@@ -431,21 +332,14 @@ function responderSesion(req, res, token, refreshToken, usuario) {
   return res.json(cuerpo);
 }
 
-/* Protección CSRF
-   ------------------------------------------------------------------
-   Con la sesión en cookies, un sitio de terceros podría forzar peticiones
-   mutadoras que el navegador firmaría con la cookie. Se exige que Origin (o
-   Referer) sea del mismo sitio en toda petición de escritura autenticada por
-   cookie. Los clientes que autentican con Bearer quedan exentos: un navegador
-   no adjunta ese header por sí solo, así que no son vulnerables a CSRF. */
 function origenesPermitidos() {
   const lista = [];
   const pub = (process.env.LC_PUBLIC_URL || "").trim();
-  if (pub) { try { lista.push(new URL(pub).origin); } catch { /* URL inválida */ } }
+  if (pub) { try { lista.push(new URL(pub).origin); } catch {} }
   for (const o of String(process.env.ORIGIN || "").split(",")) {
     const t = o.trim();
     if (!t) continue;
-    try { lista.push(new URL(t).origin); } catch { /* ignora */ }
+    try { lista.push(new URL(t).origin); } catch {}
   }
   return lista;
 }
@@ -455,8 +349,6 @@ function mismoSitio(req, valor) {
   try { origen = new URL(valor); } catch { return false; }
   const permitidos = origenesPermitidos();
   if (permitidos.length) return permitidos.includes(origen.origin);
-  // Sin configuración explícita: se compara el host con el de la petición
-  // (válido cuando el frontend y la API comparten host, p. ej. en local/e2e).
   return origen.host.toLowerCase() === String(req.get("host") || "").toLowerCase();
 }
 
@@ -471,8 +363,6 @@ function verificarOrigen(req, res, next) {
 }
 app.use("/api", verificarOrigen);
 
-/* Paginación opcional: ?pagina=1&limite=20 */
-
 const LIMITE_MAX = 100;
 const LIMITE_DEFAULT = 20;
 
@@ -481,8 +371,6 @@ function paginacionDe(req) {
   const tieneLimite = req.query.limite !== undefined || req.query.limit !== undefined;
   if (!tienePagina && !tieneLimite) return null;
 
-  // Solo con ?pagina=N debe funcionar (limite por defecto); solo con ?limite=N
-  // también (la página por defecto es 1).
   const limite = Number.parseInt(req.query.limite ?? req.query.limit ?? String(LIMITE_DEFAULT), 10);
   if (!Number.isInteger(limite) || limite < 1 || limite > LIMITE_MAX) {
     const err = new Error(`El parámetro 'limite' debe ser un entero entre 1 y ${LIMITE_MAX}`);
@@ -506,8 +394,6 @@ function responderLista(req, res, elementos) {
     limite: pag.limite
   });
 }
-
-/* Helpers */
 
 function labFromRow(row) {
   return {
@@ -533,7 +419,6 @@ function eqFromRow(row) {
   };
 }
 
-// Usuario sin el campo password
 function usrFromRow(row) {
   return {
     id: row.id, nombre: row.nombre, apellido: row.apellido, iniciales: row.iniciales,
@@ -542,39 +427,26 @@ function usrFromRow(row) {
   };
 }
 
-// Vista pública del padrón: sin email. Se usa para los usuarios que no son
-// admin, que solo necesitan nombre/rol/área para resolver referencias y no
-// tienen por qué obtener el correo de terceros (dato personal superfluo).
 function usrPublico(row) {
   const copia = usrFromRow(row);
   delete copia.email;
   return copia;
 }
 
-// ¿Puede este solicitante recibir el email de `row`? Admin siempre; y cada
-// usuario, el suyo propio.
 function puedeVerEmail(req, row) {
   return req.user?.rol === "admin" || String(req.user?.id) === String(row.id);
 }
 
-// Nivel de acceso efectivo del solicitante (lo otorga el admin). Quien no lo
-// tenga asignado se trata como básico.
 function nivelAccesoDe(req) {
   return String(req.user?.nivelAcceso || "basico");
 }
 
-// ¿Puede ver datos técnicos (hardware / red) y usar las funciones técnicas?
-// El rol admin manda; para el resto lo determina `nivelAcceso`, no el rol: un
-// profesor de programación con acceso básico no ve el hardware, y uno de otra
-// área con acceso técnico sí. Antes solo miraba el rol y el nivel quedaba sin uso.
 function esTecnico(req) {
   return req.user?.rol === "admin"
     || nivelAccesoDe(req) === "tecnico"
     || nivelAccesoDe(req) === "total";
 }
 
-// La verificación en dos pasos solo la usan las cuentas con acceso técnico o de
-// administración; los roles con acceso básico no la configuran.
 function requireTecnico2FA(req, res, next) {
   if (!esTecnico(req)) {
     return res.status(403).json({ error: "La verificación en dos pasos solo está disponible para cuentas con acceso técnico o de administración" });
@@ -598,11 +470,6 @@ function eqFromRowVisible(row, req) {
   return visible;
 }
 
-// La configuración también se filtra por rol: la interfaz solo muestra las
-// secciones de sistema a los administradores, así que la API tampoco entrega la
-// red interna, los equipos ni los parámetros de sesión a cualquier usuario
-// autenticado. Fuera del panel de administración solo se necesita el nombre del
-// sitio (tema) y los interruptores de avisos.
 function configParaUsuario(config, rol) {
   if (rol === "admin") return config;
   const notificaciones = { ...(config?.notificaciones || {}) };
@@ -617,9 +484,6 @@ function agFromRow(row) {
   };
 }
 
-// `conAdjuntos = false` (listado): no se incluye el base64 de cada adjunto, que
-// es lo que infla la respuesta; solo nombre, tipo y tamaño. El detalle
-// (GET /api/reportes/:id) sí trae el `data` completo para ver y descargar.
 function repFromRow(row, conAdjuntos = true) {
   const adjuntos = parsearJSON(row.adjuntos, []);
   const listaAdjuntos = Array.isArray(adjuntos) ? adjuntos : [];
@@ -660,10 +524,6 @@ function nombreLab(labId) {
   return db.prepare("SELECT nombre FROM laboratorios WHERE id = ?").get(labId)?.nombre ?? "laboratorio";
 }
 
-// Prepara una notificación: comprueba el interruptor global, resuelve el nombre
-// del actor y deja el mensaje listo para insertar. Lo comparten la creación
-// individual y el fan-out (notificarATodos), que así hace estas lecturas una
-// sola vez en lugar de una vez por destinatario.
 function prepararRegistroNotificacion({ toggle, tipo, titulo, mensaje, actorId = null, referencia = null, solicitudId = null, usuarioRef = null }) {
   try {
     const cfg = JSON.parse(db.prepare("SELECT data FROM config WHERE id = 1").get()?.data || "{}");
@@ -703,8 +563,6 @@ function crearNotificacion({ destinatario, ...opciones }) {
       registro.mensaje.replace(/\{quien\}/g, registro.quien),
       registro.referencia, registro.solicitudId, registro.usuarioRef, registro.fecha
     );
-    // Cota por usuario: se conservan solo las 200 notificaciones recientes
-    // (la interfaz muestra a lo sumo 50), evitando acumulación indefinida.
     db.prepare(`
       DELETE FROM notificaciones
       WHERE usuario_id = ?
@@ -714,12 +572,6 @@ function crearNotificacion({ destinatario, ...opciones }) {
     console.error("No se pudo registrar la notificación:", e.message);
   }
 }
-
-/* Auditoría de actividad */
-// Respeta el interruptor config.seguridad.registroActividad; nunca rompe la
-// petición. Ese interruptor apaga solo el registro de actividad administrativa:
-// los eventos de seguridad (accesos, 2FA, contraseñas, respaldos, configuración)
-// se guardan siempre para que la Traza no pueda desaparecer.
 
 function audFromRow(row) {
   return {
@@ -740,21 +592,12 @@ function registrarAuditoria(req, accion, detalle = {}, contexto = null) {
   try {
     const cfg = JSON.parse(db.prepare("SELECT data FROM config WHERE id = 1").get()?.data || "{}");
     if (cfg.seguridad?.registroActividad === false && !ACCIONES_SIEMPRE.has(accion)) return;
-    // Antes del login no hay req.user (aún no hay token); el contexto permite
-    // asociar el usuario aunque la sesión aún no exista.
     const origen = contexto ?? req.user ?? null;
     db.prepare(`INSERT INTO auditoria (fecha, usuario_id, rol, accion, detalle, ip) VALUES (?,?,?,?,?,?)`)
       .run(new Date().toISOString(), origen?.id ?? null, origen?.rol ?? null, accion, JSON.stringify(detalle), String(req.ip || ""));
-  } catch {
-    // La auditoría nunca debe tumbar la petición en curso.
-  }
+  } catch {}
 }
 
-/* Verificación en dos pasos (2FA) */
-// Desafíos de login: un login con 2FA activo emite un desafío de corta duración
-// y solo entrega tokens tras validar el código TOTP. Se guardan en la base
-// (tablas desafios_2fa y pendientes_2fa) para que un reinicio del servidor no
-// invalide el segundo paso ni la configuración a medias.
 const DESAFIO_TTL_MS = 5 * 60 * 1000;
 const DESAFIO_MAX_INTENTOS = 5;
 
@@ -764,9 +607,6 @@ function limpiarDesafiosVencidos() {
   db.prepare("DELETE FROM pendientes_2fa WHERE expira < ?").run(ahora);
 }
 
-// Los desafíos y las configuraciones a medias pertenecen a la base que está en
-// servicio. Al restaurar un respaldo se purgan: si no, un desafío emitido antes
-// de la restauración podría validar contra el secreto de otra versión de la base.
 alRestaurar(() => {
   try {
     db.prepare("DELETE FROM desafios_2fa").run();
@@ -776,11 +616,8 @@ alRestaurar(() => {
   }
 });
 
-// Limpieza periódica de desafíos 2FA vencidos (cada 5 minutos)
 setInterval(limpiarDesafiosVencidos, 5 * 60 * 1000).unref?.();
 
-// SAVEPOINT anidables: `BEGIN` falla si ya hay una transacción abierta. Varias
-// rutas llaman a notificarATodos desde dentro de otras operaciones (B-05).
 function enTransaccion(fn) {
   const punto = `sp_${randomBytes(8).toString("hex")}`;
   db.exec(`SAVEPOINT ${punto}`);
@@ -808,9 +645,6 @@ function notificarATodos(opciones) {
   const registro = prepararRegistroNotificacion(opciones);
   if (!registro) return;
 
-  // Fan-out: un solo cambio alcanza a todos los activos. El lote completo viaja
-  // en una transacción (un INSERT y su poda por usuario) en lugar de N llamadas
-  // independientes a crearNotificacion, cada una con sus propias lecturas.
   try {
     enTransaccion(() => {
       const insertar = db.prepare(`
@@ -900,7 +734,6 @@ function notificarReservaCancelada(reserva, actorId) {
   });
 }
 
-// Solo admin o el creador pueden editar el reporte
 function puedeModificarReporte(rep, req) {
   const uid = req.user?.id;
   if (!uid) return false;
@@ -908,10 +741,7 @@ function puedeModificarReporte(rep, req) {
   return rep.generado_por === uid;
 }
 
-// Adjuntos: validación estricta por allowlist de tipo MIME, tamaño máximo y
-// comprobación de la cabecera real del archivo (magic bytes), para que un
-// contenido disfrazado con otro tipo (p. ej. HTML renombrado a PDF) no pase.
-const MAX_ARCHIVO_ADJUNTO = 5 * 1024 * 1024; // 5 MB por archivo (body total 8 MB)
+const MAX_ARCHIVO_ADJUNTO = 5 * 1024 * 1024;
 const MAX_ARCHIVOS = 10;
 const TIPOS_ADJUNTO = new Set([
   "image/png", "image/jpeg", "image/gif", "image/webp",
@@ -922,8 +752,6 @@ const TIPOS_ADJUNTO = new Set([
   "application/zip", "application/x-rar-compressed"
 ]);
 
-// Tipo real detectado que se admite para cada tipo declarado. El DOCX
-// (openxml) y el ZIP comparten la cabecera PK (contenedor ZIP/OLE).
 const TIPO_REAL_ADMISIBLE = {
   "image/png": ["image/png"],
   "image/jpeg": ["image/jpeg"],
@@ -936,7 +764,6 @@ const TIPO_REAL_ADMISIBLE = {
   "application/x-rar-compressed": ["application/x-rar-compressed"]
 };
 
-// Detecta el tipo real por su cabecera binaria (magic bytes).
 function detectarMimeAdjunto(buf) {
   if (!buf || buf.length < 4) return null;
   if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
@@ -956,8 +783,6 @@ function cuerpoBase64(data) {
   return coma < 0 ? "" : data.slice(coma + 1);
 }
 
-// Los textos no tienen cabecera binaria: solo se exige que decodifiquen a
-// UTF-8 sin bytes de control ni NUL (evita archivos binarios camuflados).
 function contenidoTextoValido(t, data) {
   if (t !== "text/plain" && t !== "text/csv") return false;
   try {
@@ -974,9 +799,6 @@ function sanitizarAdjuntos(adjuntos) {
     const data = typeof a.data === "string" ? a.data : "";
     const t = String(a.tipo || "").toLowerCase();
     const tamano = Number(a.tamano) || 0;
-    // El límite se mide sobre los bytes reales, no sobre los caracteres base64:
-    // contar `data.length` rechazaba de forma silenciosa todo archivo de más de
-    // ~3,75 MB aunque el máximo anunciado fuera de 5 MB.
     const cuerpo = /^data:[^,]*;base64,/.test(data) ? cuerpoBase64(data) : "";
     const bytes = cuerpo ? Buffer.from(cuerpo, "base64").length : 0;
     const valido =
@@ -1000,14 +822,11 @@ function sanitizarAdjuntos(adjuntos) {
   return resultado;
 }
 
-// Texto libre: normaliza y limita el largo (el escape HTML se hace al renderizar).
 function sanitizarTexto(valor, max = 5000) {
   if (typeof valor !== "string") return "";
   return String(valor).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").slice(0, max);
 }
 
-// Fecha ISO AAAA-MM-DD real: no basta con que la forma coincida, hay que
-// comprobar que el día exista. Antes, 2027-02-31 pasaba el regex y se guardaba.
 function esFechaISOValida(valor) {
   if (typeof valor !== "string") return false;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor);
@@ -1022,16 +841,10 @@ function esFechaISOValida(valor) {
     && fecha.getUTCDate() === dia;
 }
 
-// Carga útil en JSON de un reporte: se acota su tamaño para que un reporte no
-// pueda almacenar megabytes en la base (DoS de disco y respuestas lentas).
-const MAX_DATOS_REPORTE = 256 * 1024; // 256 KB serializados
+const MAX_DATOS_REPORTE = 256 * 1024;
 
-// Claves que nunca deben viajar dentro de los datos de un reporte: si un
-// consumidor futuro mezclara el objeto con otro, contaminarían el prototipo.
 const CLAVES_NO_DATOS = new Set(["__proto__", "constructor", "prototype"]);
 
-// Copia profunda de un valor JSON sin claves peligrosas ni números no finitos.
-// El cuerpo ya viene de JSON.parse, así que no hay funciones ni ciclos.
 function limpiarDatosLibres(valor, profundidad = 0) {
   if (profundidad > 12) return null;
   if (valor === null || typeof valor === "string" || typeof valor === "boolean") return valor;
@@ -1048,8 +861,6 @@ function limpiarDatosLibres(valor, profundidad = 0) {
   return null;
 }
 
-// JSON tolerante a datos corruptos o antiguos: un registro con JSON inválido no
-// debe tumbar el listado ni el detalle del reporte.
 function parsearJSON(texto, porDefecto) {
   try {
     const valor = JSON.parse(texto || "");
@@ -1081,9 +892,6 @@ function serializarDatos(datos) {
   return texto;
 }
 
-// Ids generados en cliente: solo se aceptan formatos seguros (evita inyección por
-// atributo) y nunca se reutiliza uno que ya exista. Antes, un id repetido (o dos
-// altas en el mismo milisegundo) terminaban en un error 500 de clave primaria.
 function nuevoId(prefijo, sugerido, tabla = null) {
   const candidato = typeof sugerido === "string" ? sugerido.trim() : "";
   if (candidato && /^[A-Za-z0-9_]{1,32}$/.test(candidato) && !idEnUso(tabla, candidato)) return candidato;
@@ -1101,16 +909,10 @@ function idEnUso(tabla, id) {
   } catch { return true; }
 }
 
-// Escapa los comodines de LIKE para que el usuario busque texto literal.
 function escaparLike(texto) {
   return texto.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
-/* Login (con rate limit estricto) */
-
-// Vigencia del access token: respeta `seguridad.sesionTimeout` (Configuración →
-// Seguridad) como techo, de modo que la política configurada sea la que rija y no
-// un valor fijo. LC_JWT_EXPIRES manda cuando está definido (lo usan los tests).
 function ttlAcceso() {
   if (process.env.LC_JWT_EXPIRES) return process.env.LC_JWT_EXPIRES;
   const minutos = Number(JSON.parse(
@@ -1121,7 +923,6 @@ function ttlAcceso() {
   return `${segundos}s`;
 }
 
-// Token de acceso: corto plazo, autentica las peticiones a la API.
 function firmarAcceso(fila) {
   return jwt.sign(
     { tipo: "access", id: fila.id, rol: fila.rol, nombre: fila.nombre, apellido: fila.apellido, iniciales: fila.iniciales, nivelAcceso: fila.nivel_acceso },
@@ -1130,8 +931,6 @@ function firmarAcceso(fila) {
   );
 }
 
-// Token de refresco: largo plazo, se guarda en la tabla refresh_tokens y se
-// rota en cada uso. Limpia además los tokens ya vencidos para no acumular filas.
 function limpiarTokensVencidos() {
   db.prepare("DELETE FROM refresh_tokens WHERE expira_en < ?").run(Date.now());
 }
@@ -1142,8 +941,6 @@ function emitirRefreshToken(usuarioId) {
   const ahora = Date.now();
   db.prepare("INSERT INTO refresh_tokens (id, usuario_id, creado_en, expira_en, revocado) VALUES (?,?,?,?,0)")
     .run(id, usuarioId, ahora, ahora + REFRESH_TOKEN_TTL_MS);
-  // Cota por usuario: se conservan los 5 refresh tokens más recientes y se
-  // podan los revocados más antiguos para no acumular filas para siempre.
   db.prepare(`
     DELETE FROM refresh_tokens
     WHERE usuario_id = ? AND revocado = 1
@@ -1156,14 +953,7 @@ function emitirRefreshToken(usuarioId) {
   );
 }
 
-// Limpieza periódica (cada 15 minutos): tokens vencidos y poda de las tablas
-// que acumulan sin cota (auditoría, notificaciones, solicitudes y enlaces de
-// reseteo) para que la base de datos no crezca indefinidamente.
-// El índice de notificaciones por usuario se crea aquí (idempotente) para que
-// la poda por usuario en crearNotificacion no haga un full-scan.
 db.exec("CREATE INDEX IF NOT EXISTS idx_notificaciones_usuario ON notificaciones(usuario_id, id)");
-// Los temporizadores de limpieza no deben sostener el proceso ni fallar si la
-// base ya se cerró (p. ej. al terminar una suite de pruebas).
 const temporizadorLimpieza = setInterval(() => {
   try {
     const podadas = podarTablas();
@@ -1177,15 +967,11 @@ const temporizadorLimpieza = setInterval(() => {
 }, 15 * 60 * 1000);
 temporizadorLimpieza.unref?.();
 
-// Respaldo externo programado (opcional). Se activa con LC_BACKUP_AUTO=1 y un
-// destino (LC_BACKUP_S3_URI o LC_BACKUP_COPIAR_A). No hace nada en desarrollo.
 iniciarRespaldoProgramado({ logger: console });
 
 app.post("/api/login", loginLimiter, async (req, res) => {
   const { usuario, password } = req.body || {};
 
-  // Los tipos se validan antes de tocar SQLite o bcrypt: un objeto o un número
-  // llegaba hasta el driver y devolvía 500 en vez de un 400 claro.
   if (typeof usuario !== "string" || typeof password !== "string") {
     return res.status(400).json({ error: "El usuario y la contraseña deben ser texto" });
   }
@@ -1195,14 +981,11 @@ app.post("/api/login", loginLimiter, async (req, res) => {
     return res.status(400).json({ error: "Credenciales no válidas" });
   }
 
-  // El correo se compara sin distinguir mayúsculas (ADMIN@LICEO.CL debe entrar),
-  // pero el identificador de usuario se mantiene exacto.
   const row = db.prepare(`
     SELECT * FROM usuarios
     WHERE (id = ? OR lower(email) = lower(?)) AND activo = 1
   `).get(identificador, identificador);
 
-  // Hash ficticio para prevenir ataques de temporización
   const hashFicticio = "$2a$10$ejPcmjH1Njlwe/IlvwtMK.3Wjjl5KKIo3LwiNO4kwqGB6ffG.3R2C";
   const passwordValido = await bcrypt.compare(password, row ? row.password : hashFicticio);
   if (!row || !passwordValido) {
@@ -1210,7 +993,6 @@ app.post("/api/login", loginLimiter, async (req, res) => {
     return res.status(401).json({ error: "Usuario o contraseña incorrectos" });
   }
 
-  // 2FA activo: se pide el código TOTP antes de emitir ningún token.
   if (row.totp_habilitado === 1 && row.totp_secreto) {
     limpiarDesafiosVencidos();
     const loginId = randomBytes(32).toString("hex");
@@ -1227,7 +1009,6 @@ app.post("/api/login", loginLimiter, async (req, res) => {
   responderSesion(req, res, token, refreshToken, usrFromRow(row));
 });
 
-// Segundo paso del login con 2FA: valida el código TOTP del desafío pendiente.
 app.post("/api/login/2fa", loginLimiter, (req, res) => {
   const { loginId, codigo } = req.body || {};
   if (typeof loginId !== "string" || typeof codigo !== "string" || !loginId || !codigo) {
@@ -1263,45 +1044,23 @@ app.post("/api/login/2fa", loginLimiter, (req, res) => {
   responderSesion(req, res, token, refreshToken, usrFromRow(row));
 });
 
-/* Verificación en dos pasos (2FA) — gestión propia (entra a Configuración → Seguridad) */
-
-// Comprobación de vida del servicio, sin token y sin tocar la base: la usan el
-// hosting del backend (health check) y quien despliegue el proyecto para ver si
-// la API está respondiendo. Públicamente solo dice `{ ok: true }` para no
-// revelar la versión ni el nombre del servicio (fingerprinting). El detalle
-// (servicio y versión) solo se devuelve si la petición trae el encabezado
-// `x-lc-salud-token` con el valor de LC_SALUD_TOKEN (comparación en tiempo
-// constante); el flujo de despliegue pasa ese encabezado.
-//
-// Ojo: este número es la versión de la API, no la de la web. La web va por
-// delante casi siempre; esto solo sube cuando cambia el comportamiento de la
-// API. Railway solo recompila el backend cuando el despliegue automático del
-// servicio está activo, así que subirlo en cada versión obligaría a redesplegar
-// la API sin ningún cambio real que lo justifique. El flujo de despliegue
-// compara este número contra el que declara el último commit que tocó
-// `website/backend`, que es el que manda.
 app.get("/api/salud", (req, res) => {
   const detallado = SALUD_TOKEN && igualSeguro(String(req.headers["x-lc-salud-token"] || ""), SALUD_TOKEN);
-  // El detalle incluye cuántas cuentas demo conservan la contraseña publicada.
-  // Es un número, no la lista: sirve para alertar sin filtrar identificadores.
   res.json(detallado
     ? {
         ok: true,
         servicio: "labcontrol-api",
-        version: "4.9.1",
+        version: "4.9",
         cuentasDemoPendientes: cuentasDemoSinRotar().length
       }
     : { ok: true });
 });
 
-// Estado del 2FA de la sesión actual.
 app.get("/api/2fa/estado", authenticateToken, (req, res) => {
   const fila = db.prepare("SELECT totp_habilitado FROM usuarios WHERE id = ?").get(req.user.id);
   res.json({ habilitado: fila?.totp_habilitado === 1 });
 });
 
-// Inicia la configuración: genera un secreto nuevo (no se activa hasta verificar).
-// Solo para cuentas con acceso técnico o de administración.
 app.post("/api/2fa/setup", authenticateToken, requireTecnico2FA, async (req, res) => {
   const fila = db.prepare("SELECT totp_habilitado FROM usuarios WHERE id = ?").get(req.user.id);
   if (fila?.totp_habilitado === 1) {
@@ -1315,7 +1074,7 @@ app.post("/api/2fa/setup", authenticateToken, requireTecnico2FA, async (req, res
   let qrDataUrl = "";
   try {
     qrDataUrl = await QRCode.toDataURL(otpauth, { margin: 1, width: 220, color: { dark: "#1f2937", light: "#ffffff" } });
-  } catch { /* el QR es opcional; el secreto se puede ingresar a mano */ }
+  } catch {}
 
   db.prepare(`
     INSERT INTO pendientes_2fa (usuario_id, secreto, expira) VALUES (?, ?, ?)
@@ -1325,7 +1084,6 @@ app.post("/api/2fa/setup", authenticateToken, requireTecnico2FA, async (req, res
   res.json({ secreto, otpauthUrl: otpauth, qrDataUrl });
 });
 
-// Activa el 2FA tras verificar el código generado con el secreto pendiente.
 app.post("/api/2fa/verificar", authenticateToken, requireTecnico2FA, sensiblesLimiter, (req, res) => {
   const { codigo } = req.body || {};
   if (!codigo) return res.status(400).json({ error: "Falta el código de verificación" });
@@ -1346,7 +1104,6 @@ app.post("/api/2fa/verificar", authenticateToken, requireTecnico2FA, sensiblesLi
   res.json({ ok: true });
 });
 
-// Desactiva el 2FA (exige el código actual para confirmar).
 app.post("/api/2fa/desactivar", authenticateToken, sensiblesLimiter, (req, res) => {
   const { codigo } = req.body || {};
   const fila = db.prepare("SELECT totp_secreto, totp_habilitado FROM usuarios WHERE id = ?").get(req.user.id);
@@ -1365,18 +1122,12 @@ app.post("/api/2fa/desactivar", authenticateToken, sensiblesLimiter, (req, res) 
   res.json({ ok: true });
 });
 
-/* Auditoría de actividad (solo administrador) */
-
 app.get("/api/auditoria", authenticateToken, requireAdmin, (req, res) => {
-  // Los filtros se aplican en SQL (no después de un LIMIT) para que la búsqueda
-  // abarque todo el registro y no solo los 1000 eventos más recientes.
   const condiciones = [];
   const valores = [];
 
   const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
   if (q) {
-    // Sin escapar, `%` y `_` actúan como comodines de LIKE: buscar "%" devolvía
-    // el registro completo y "a_b" también encontraba "aab".
     const patron = `%${escaparLike(q)}%`;
     condiciones.push(`(accion LIKE ? ESCAPE '\\' OR IFNULL(usuario_id, '') LIKE ? ESCAPE '\\' OR IFNULL(rol, '') LIKE ? ESCAPE '\\' OR IFNULL(detalle, '') LIKE ? ESCAPE '\\')`);
     for (let i = 0; i < 4; i++) valores.push(patron);
@@ -1416,12 +1167,6 @@ app.get("/api/auditoria", authenticateToken, requireAdmin, (req, res) => {
   });
 });
 
-/* Respaldo de la base de datos (solo administrador) */
-
-// Descargar: se sirve una instantánea consistente, no el archivo vivo. Leer el
-// .db en marcha podía capturar páginas a medio escribir y producir un respaldo
-// que parecía válido pero fallaba al restaurar. `VACUUM INTO` + integrity_check
-// garantizan que la copia entregada es coherente.
 app.get("/api/backups/exportar", authenticateToken, requireAdmin, (req, res) => {
   const nombre = `labcontrol-backup-${new Date().toISOString().slice(0, 10)}-${Date.now()}.db`;
   let copia;
@@ -1435,11 +1180,7 @@ app.get("/api/backups/exportar", authenticateToken, requireAdmin, (req, res) => 
 
   registrarAuditoria(req, "backup_descargado");
 
-  // res.download fija Content-Disposition, Content-Length y sirve el archivo;
-  // el temporal se borra siempre al terminar (éxito o error).
   res.setHeader("Content-Type", "application/octet-stream");
-  // `dotfiles: "allow"` es necesario porque la instantánea es un archivo oculto
-  // (`.labcontrol-temporal-…`); el nombre que ve el usuario es `nombre`.
   res.download(copia, nombre, { dotfiles: "allow" }, (err) => {
     fs.rm(copia, { force: true }, () => {});
     if (!err) return;
@@ -1452,10 +1193,6 @@ app.get("/api/backups/exportar", authenticateToken, requireAdmin, (req, res) => 
   });
 });
 
-// Restaurar: se recibe el archivo .db como binario y se reemplaza la base actual.
-// El respaldo se valida entero (cabecera SQLite, integridad y esquema) sobre una
-// copia temporal antes de tocar nada; si algo falla, la base en servicio sigue
-// intacta y solo queda una copia `.prev` de la anterior.
 app.post("/api/backups/restaurar", authenticateToken, requireAdmin,
   express.raw({ type: ["application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3"], limit: "60mb" }),
   async (req, res) => {
@@ -1471,17 +1208,12 @@ app.post("/api/backups/restaurar", authenticateToken, requireAdmin,
         error: status === 400 ? err.message : "No se pudo restaurar el respaldo. La base anterior fue conservada."
       });
     }
-    try { registrarAuditoria(req, "backup_restaurado"); } catch { /* tabla nueva en la base restaurada */ }
+    try { registrarAuditoria(req, "backup_restaurado"); } catch {}
     res.json({ ok: true });
   }
 );
 
-// Renovación de sesión con rotación del refresh token: cada uso invalida el
-// token anterior y emite uno nuevo, de modo que un token robado deja de servir
-// en cuanto sea reutilizado o se cierre sesión.
 app.post("/api/refresh", refreshLimiter, (req, res) => {
-  // El navegador manda el refresh en la cookie HttpOnly; los clientes de API
-  // pueden seguir mandándolo en el cuerpo.
   const refreshToken = (req.body && req.body.refreshToken) || leerCookie(req, COOKIE_REFRESCO);
   if (typeof refreshToken !== "string" || !refreshToken) {
     return res.status(400).json({ error: "Falta el token de refresco" });
@@ -1501,9 +1233,6 @@ app.post("/api/refresh", refreshLimiter, (req, res) => {
 
   const fila = db.prepare("SELECT usuario_id, revocado, expira_en FROM refresh_tokens WHERE id = ?").get(decoded.id);
   if (!fila) {
-    // El JWT sigue siendo válido (firmado por nosotros) aunque su fila haya
-    // sido podada o expirada: eso también es reutilización y debe cerrar la
-    // familia de sesiones (B-06).
     if (decoded.sub) {
       db.prepare("UPDATE refresh_tokens SET revocado = 1 WHERE usuario_id = ? AND revocado = 0")
         .run(decoded.sub);
@@ -1518,9 +1247,6 @@ app.post("/api/refresh", refreshLimiter, (req, res) => {
     return res.status(401).json({ error: "Sesión expirada. Inicia sesión nuevamente." });
   }
   if (fila.revocado === 1) {
-    // Se reutiliza un token ya rotado: es la señal clásica de un token robado.
-    // Se cierra la familia completa de sesiones del usuario para cortar el
-    // acceso al atacante (y el suyo, que tendrá que volver a iniciar sesión).
     const abiertas = db.prepare(
       "SELECT COUNT(*) AS n FROM refresh_tokens WHERE usuario_id = ? AND revocado = 0"
     ).get(fila.usuario_id).n;
@@ -1550,8 +1276,6 @@ app.post("/api/refresh", refreshLimiter, (req, res) => {
   responderSesion(req, res, firmarAcceso(usuario), nuevoRefresh, usrFromRow(usuario));
 });
 
-// Cierre de sesión: revoca el refresh token entregado (best-effort) y limpia
-// las cookies de sesión del navegador.
 app.post("/api/logout", refreshLimiter, (req, res) => {
   const refreshToken = (req.body && req.body.refreshToken) || leerCookie(req, COOKIE_REFRESCO);
   let usuarioLogout = null;
@@ -1562,25 +1286,19 @@ app.post("/api/logout", refreshLimiter, (req, res) => {
         usuarioLogout = decoded.sub ?? null;
         db.prepare("UPDATE refresh_tokens SET revocado = 1 WHERE id = ?").run(decoded.id);
       }
-    } catch {
-      // Token ya inválido o vencido: no hay nada que revocar.
-    }
+    } catch {}
   }
   limpiarCookiesSesion(req, res);
   registrarAuditoria(req, "logout", { usuario: usuarioLogout });
   res.json({ ok: true });
 });
 
-// Sesión verificada: la cookie HttpOnly decide la identidad real. El cliente
-// usa esta ruta en vez de fiarse del localStorage para decidir menú y botones
-// (B-08); las comprobaciones de la API siguen siendo la última línea.
 app.get("/api/me", authenticateToken, (req, res) => {
   const fila = db.prepare("SELECT * FROM usuarios WHERE id = ? AND activo = 1").get(req.user.id);
   if (!fila) return res.status(401).json({ error: "La cuenta no está activa" });
   res.json({ usuario: usrFromRow(fila) });
 });
 
-// Cambio de contraseña (verifica la contraseña actual)
 app.post("/api/change-password", authenticateToken, sensiblesLimiter, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) {
@@ -1600,28 +1318,20 @@ app.post("/api/change-password", authenticateToken, sensiblesLimiter, async (req
 
   const hashed = await bcrypt.hash(newPassword, 10);
   db.prepare("UPDATE usuarios SET password = ? WHERE id = ?").run(hashed, req.user.id);
-  // Por seguridad, toda sesión de larga duración muere al cambiar la contraseña.
   db.prepare("UPDATE refresh_tokens SET revocado = 1 WHERE usuario_id = ?").run(req.user.id);
   registrarAuditoria(req, "password_cambiada");
   res.json({ ok: true, message: "Contraseña actualizada correctamente" });
 });
 
-/* Recuperación de contraseña (base lista; el correo real se envía con Resend) */
-// El enlace de restablecimiento vive 30 minutos en `contrasena_resets`.
-// Sin RESEND_API_KEY no se envía ni se imprime el enlace; en producción la
-// variable es obligatoria. RESEND_FROM es opcional.
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const PRODUCCION = process.env.NODE_ENV === "production";
 
-// El token viaja en claro solo en el correo; en la base se guarda su hash,
-// así un volcado o un backup no expone enlaces vigentes (B-02).
 const hashResetToken = (token) => createHash("sha256").update(String(token)).digest("hex");
 
 function limpiarResetsExpirados() {
   db.prepare("DELETE FROM contrasena_resets WHERE expira_en < ?").run(Date.now());
 }
 
-// Limpieza periódica de resets expirados (cada 10 minutos)
 setInterval(() => {
   try {
     limpiarResetsExpirados();
@@ -1633,9 +1343,6 @@ setInterval(() => {
 async function enviarCorreoReseteo(email, enlace) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    // Sin proveedor no se entrega ningún correo. Nunca imprimir el enlace: el
-    // token quedaría en los logs con acceso de lectura amplio (M-07). El
-    // desarrollador puede consultarlo solo en la base, ya hasheado.
     console.log("  [Recuperar contraseña] solicitud recibida; sin RESEND_API_KEY no se envía correo.");
     return;
   }
@@ -1662,21 +1369,13 @@ async function enviarCorreoReseteo(email, enlace) {
   }
 }
 
-// Base URL pública para enlaces que van en correos. Se toma SIEMPRE de la
-// configuración del servidor (LC_PUBLIC_URL); nunca del header Host entrante,
-// porque un Host falsificado podría dirigir el enlace de restablecimiento a un
-// dominio ajeno (phishing o fuga del token). Si no está configurada, se asume
-// el entorno local.
 function urlBasePublico() {
   const fija = (process.env.LC_PUBLIC_URL || "").trim();
   if (fija) return fija.replace(/\/+$/, "");
   return `http://localhost:${PORT}`;
 }
 
-// Solicitar recuperación: siempre responde lo mismo (no revela si la cuenta existe).
 app.post("/api/recuperar-contrasena", (req, res) => {
-  // En producción sin proveedor de correo la recuperación no puede funcionar:
-  // se responde 503 antes de mirar la base para no revelar si el correo existe.
   if (PRODUCCION && !process.env.RESEND_API_KEY) {
     return res.status(503).json({ error: "La recuperación de contraseña no está disponible en este momento." });
   }
@@ -1700,7 +1399,6 @@ app.post("/api/recuperar-contrasena", (req, res) => {
   res.json({ ok: true });
 });
 
-// Completar restablecimiento con el token del enlace recibido por correo.
 app.post("/api/recuperar-contrasena/:token", [
   reglaPassword("newPassword")
 ], async (req, res) => {
@@ -1726,7 +1424,6 @@ app.post("/api/recuperar-contrasena/:token", [
   res.json({ ok: true, message: "Contraseña actualizada. Inicia sesión con tu nueva contraseña." });
 });
 
-/* Registro de cuenta propia (público, sin sesión) */
 app.post("/api/registro", registroLimiter, [
   body("id").trim().matches(/^[a-zA-Z0-9_]{1,32}$/).withMessage("El usuario debe tener entre 1 y 32 caracteres: letras, números y guion bajo"),
   body("nombre").trim().notEmpty().withMessage("El nombre es obligatorio"),
@@ -1736,7 +1433,6 @@ app.post("/api/registro", registroLimiter, [
   body("area").optional({ values: "falsy" }).trim().isLength({ max: 100 }).withMessage("El área no puede superar 100 caracteres"),
   body("especialidad").optional({ values: "falsy" }).trim().isLength({ max: 200 }).withMessage("La especialidad no puede superar 200 caracteres")
 ], async (req, res) => {
-  // Registro cerrado: sin dominios admitidos no se crea ninguna cuenta pública.
   if (REGISTRO_DOMINIOS.length === 0) {
     return res.status(403).json({ error: "El registro público está cerrado. Solicita tu cuenta al administrador." });
   }
@@ -1750,7 +1446,6 @@ app.post("/api/registro", registroLimiter, [
   u.id = String(u.id ?? "").trim();
   u.email = String(u.email ?? "").trim().toLowerCase();
 
-  // Solo se admiten correos de los dominios institucionales declarados.
   const dominio = u.email.split("@")[1] ?? "";
   if (!REGISTRO_DOMINIOS.includes(dominio)) {
     return res.status(403).json({
@@ -1767,8 +1462,6 @@ app.post("/api/registro", registroLimiter, [
 
   const iniciales = `${(u.nombre[0] ?? "?")}${(u.apellido[0] ?? "")}`.toUpperCase();
   const hashed = await bcrypt.hash(u.password, 10);
-  // La cuenta nace INACTIVA: no puede iniciar sesión hasta que un administrador
-  // la apruebe desde Usuarios. El nivel de acceso también lo otorga el admin.
   db.prepare(`
     INSERT INTO usuarios (id,nombre,apellido,iniciales,email,password,rol,area,especialidad,nivel_acceso,activo)
     VALUES (@id,@nombre,@apellido,@iniciales,@email,@password,@rol,@area,@especialidad,@nivel_acceso,0)
@@ -1782,12 +1475,9 @@ app.post("/api/registro", registroLimiter, [
     rol: "otro_area",
     area: sanitizarTexto(u.area, 100),
     especialidad: sanitizarTexto(u.especialidad, 200),
-    // El nivel de acceso queda sin asignar: lo otorga el administrador desde la
-    // ficha del usuario (antes se asignaba "basico" automáticamente).
     nivel_acceso: null
   });
 
-  // Los administradores reciben una notificación con la cuenta nueva.
   const admins = db.prepare("SELECT id FROM usuarios WHERE rol = 'admin' AND activo = 1").all();
   for (const a of admins) {
     crearNotificacion({
@@ -1808,8 +1498,6 @@ app.post("/api/registro", registroLimiter, [
   });
 });
 
-/* Laboratorios */
-
 app.get("/api/laboratorios", authenticateToken, (req, res) => {
   const rows = db.prepare("SELECT * FROM laboratorios ORDER BY id").all();
   responderLista(req, res, rows.map((r) => labFromRowVisible(r, req)));
@@ -1821,8 +1509,6 @@ app.get("/api/laboratorios/:id", authenticateToken, (req, res) => {
   res.json(labFromRowVisible(row, req));
 });
 
-// Cambio de estado: cualquier usuario autenticado (como permite la interfaz y el README).
-// Otros campos requieren rol técnico y por ahora no están expuestos en la API.
 app.patch("/api/laboratorios/:id", authenticateToken, (req, res) => {
   const campos = Object.keys(req.body || {});
   if (!campos.includes("estado")) {
@@ -1831,8 +1517,6 @@ app.patch("/api/laboratorios/:id", authenticateToken, (req, res) => {
   if (campos.some((k) => k !== "estado") && !esTecnico(req)) {
     return res.status(403).json({ error: "Se requieren permisos técnicos para modificar otros campos" });
   }
-  // Esta ruta solo escribe `estado`. Antes, un técnico que enviara además `nombre` o
-  // `so` recibía 200 y la operación se perdía en silencio: ahora se explica.
   const ignorados = campos.filter((k) => k !== "estado");
   if (ignorados.length) {
     return res.status(400).json({ error: `Desde aquí solo se puede cambiar el estado del laboratorio. Campo no editable: ${ignorados.join(", ")}` });
@@ -1853,8 +1537,6 @@ app.patch("/api/laboratorios/:id", authenticateToken, (req, res) => {
   res.json(lab);
 });
 
-/* Equipos */
-
 app.get("/api/equipos", authenticateToken, (req, res) => {
   const { labId } = req.query;
   const rows = labId
@@ -1862,8 +1544,6 @@ app.get("/api/equipos", authenticateToken, (req, res) => {
     : db.prepare("SELECT * FROM equipos ORDER BY id").all();
   responderLista(req, res, rows.map((r) => eqFromRowVisible(r, req)));
 });
-
-/* Usuarios */
 
 app.get("/api/usuarios", authenticateToken, (req, res) => {
   const rows = db.prepare("SELECT * FROM usuarios ORDER BY nombre").all();
@@ -1895,13 +1575,10 @@ app.post("/api/usuarios", authenticateToken, requireAdmin, [
   const existe = db.prepare("SELECT id FROM usuarios WHERE id = ?").get(u.id);
   if (existe) return res.status(409).json({ error: "Ya existe un usuario con ese ID" });
 
-  // El email se normaliza a minúsculas y la unicidad no distingue mayúsculas,
-  // para que "Docente@liceo.cl" no se cuele como una cuenta distinta.
   const email = String(u.email || "").trim().toLowerCase();
   const emailUso = db.prepare("SELECT id FROM usuarios WHERE lower(email) = ?").get(email);
   if (emailUso) return res.status(409).json({ error: "El email ya está en uso por otro usuario" });
 
-  // Las iniciales se derivan en el servidor: el cliente no las controla.
   const nombre = sanitizarTexto(u.nombre, 100);
   const apellido = sanitizarTexto(u.apellido, 100);
   const iniciales = `${nombre.trim()[0] ?? ""}${apellido.trim()[0] ?? ""}`.toUpperCase();
@@ -1923,9 +1600,6 @@ app.post("/api/usuarios", authenticateToken, requireAdmin, [
   res.status(201).json(usrFromRow(row));
 });
 
-// Un usuario puede editar su propio perfil (nombre, apellido y email);
-// el área y la especialidad las gestiona el admin (la especialidad de un
-// no-admin se cambia mediante una solicitud que el admin debe aprobar).
 app.patch("/api/usuarios/:id", authenticateToken, [
   body("nombre").optional().trim().notEmpty(),
   body("apellido").optional().trim().notEmpty(),
@@ -1981,7 +1655,6 @@ app.patch("/api/usuarios/:id", authenticateToken, [
       } else if (key === "email") {
         valores[col] = String(req.body[key]).trim().toLowerCase();
       } else if (key === "activo") {
-        // SQLite no acepta booleanos: se traduce a 0/1 (si no, error 500).
         valores[col] = req.body[key] ? 1 : 0;
       } else if (key === "nombre" || key === "apellido" || key === "area") {
         valores[col] = sanitizarTexto(req.body[key], 100);
@@ -2002,11 +1675,9 @@ app.patch("/api/usuarios/:id", authenticateToken, [
     campos: Object.keys(map).filter((k) => req.body[k] !== undefined)
   });
 
-  // Si el propio usuario cambió su nombre/apellido, refrescar el JWT para que el menú se actualice.
   if (esSelf && (req.body.nombre !== undefined || req.body.apellido !== undefined)) {
     const fresca = db.prepare("SELECT * FROM usuarios WHERE id = ?").get(req.user.id);
     const token = firmarAcceso(fresca);
-    // El navegador recibe el token renovado en la cookie; el cliente de API, en el cuerpo.
     res.cookie(COOKIE_ACCESO, token, opcionesCookie(req));
     const cuerpo = { ...usrFromRow(fresca) };
     if (incluirTokensEnCuerpo(req)) cuerpo.token = token;
@@ -2016,11 +1687,6 @@ app.patch("/api/usuarios/:id", authenticateToken, [
   res.json(usrFromRow(db.prepare("SELECT * FROM usuarios WHERE id = ?").get(req.params.id)));
 });
 
-// Baja definitiva de una cuenta (solo admin), frente a la desactivación:
-// el usuario desaparece del padrón y no puede volver a iniciar sesión. Para no
-// romper las claves foráneas ni perder datos, los reportes y las solicitudes
-// que lo referencian quedan sin autor; las tablas hijas con ON DELETE CASCADE
-// (agenda, notificaciones, refresh tokens, resets y 2FA) se limpian solas.
 app.delete("/api/usuarios/:id", authenticateToken, requireAdmin, (req, res) => {
   const actual = db.prepare("SELECT * FROM usuarios WHERE id = ?").get(req.params.id);
   if (!actual) return res.status(404).json({ error: "Usuario no encontrado" });
@@ -2041,8 +1707,6 @@ app.delete("/api/usuarios/:id", authenticateToken, requireAdmin, (req, res) => {
   registrarAuditoria(req, "usuario_eliminado", { usuario: actual.id, rol: actual.rol });
   res.status(204).end();
 });
-
-/* Agenda / reservas */
 
 app.get("/api/agenda", authenticateToken, (req, res) => {
   const rows = db.prepare("SELECT * FROM agenda ORDER BY fecha, hora_inicio").all();
@@ -2066,14 +1730,12 @@ app.post("/api/agenda", authenticateToken, [
   const lab = db.prepare("SELECT id FROM laboratorios WHERE id = ?").get(r.labId);
   if (!lab) return res.status(400).json({ error: "El laboratorio no existe" });
 
-  // No reservar en fechas pasadas
   const hoy = new Date();
   const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
   if (r.fecha < hoyISO) {
     return res.status(400).json({ error: "No se pueden agendar reservas en fechas pasadas" });
   }
 
-  // Anticipación máxima configurable
   const cfg = JSON.parse(db.prepare("SELECT data FROM config WHERE id = 1").get()?.data || "{}");
   const anticipMax = Number(cfg.laboratorios?.anticipacionMaxReserva) || 7;
   const fechaReserva = new Date(r.fecha + "T00:00:00Z");
@@ -2089,7 +1751,6 @@ app.post("/api/agenda", authenticateToken, [
     return res.status(400).json({ error: "La hora de fin debe ser posterior a la de inicio" });
   }
 
-  // Evitar solapamientos del mismo laboratorio en la misma fecha
   const previas = db.prepare(`
     SELECT * FROM agenda WHERE lab_id = ? AND fecha = ? AND estado != 'cancelada'
   `).all(r.labId, r.fecha);
@@ -2102,8 +1763,6 @@ app.post("/api/agenda", authenticateToken, [
   }
 
   const id = nuevoId("res", r.id, "agenda");
-  // El estado no lo decide el cliente (mass assignment): toda reserva nace
-  // "pendiente" y solo el admin puede cancelarla o confirmarla después.
   db.prepare(`
     INSERT INTO agenda (id, lab_id, usuario_id, fecha, hora_inicio, hora_fin, motivo, estado)
     VALUES (?,?,?,?,?,?,?,'pendiente')
@@ -2120,7 +1779,6 @@ app.delete("/api/agenda/:id", authenticateToken, (req, res) => {
   const actual = db.prepare("SELECT * FROM agenda WHERE id = ?").get(req.params.id);
   if (!actual) return res.status(404).json({ error: "Reserva no encontrada" });
 
-  // Solo el creador o un admin pueden cancelar
   if (actual.usuario_id !== req.user.id && req.user.rol !== "admin") {
     return res.status(403).json({ error: "No tienes permiso para cancelar esta reserva" });
   }
@@ -2131,14 +1789,8 @@ app.delete("/api/agenda/:id", authenticateToken, (req, res) => {
   res.status(204).end();
 });
 
-/* Reportes */
-
-// Tipos cuyo contenido se calcula en el servidor a partir de las tablas reales.
-// El cliente ya no envía datos: si los manda, se ignoran para estos tipos.
 const TIPOS_REPORTE_CALCULADOS = new Set(["uso", "disponibilidad", "fallas", "inventario"]);
 
-// Rango [inicio, fin) del mes al que pertenece la fecha del reporte. Si la
-// fecha no se puede interpretar, se usa el mes en curso.
 function rangoMes(fechaIso) {
   const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(fechaIso || ""));
   const hoy = new Date();
@@ -2154,8 +1806,6 @@ function rangoMes(fechaIso) {
   return { inicio, fin: siguiente.toISOString().slice(0, 10) };
 }
 
-// Duración en horas de una reserva. Devuelve 0 si las horas no son válidas o
-// el fin no es posterior al inicio.
 function horasEntre(horaInicio, horaFin) {
   const a = /^(\d{1,2}):(\d{2})$/.exec(String(horaInicio || ""));
   const b = /^(\d{1,2}):(\d{2})$/.exec(String(horaFin || ""));
@@ -2164,11 +1814,6 @@ function horasEntre(horaInicio, horaFin) {
   return minutos > 0 ? minutos / 60 : 0;
 }
 
-// Calcula el contenido de un reporte con datos reales:
-//   uso             → horas reservadas por laboratorio en el mes indicado
-//   disponibilidad  → % de equipos activos por laboratorio
-//   fallas          → equipos actualmente en falla
-//   inventario      → conteo de equipos por estado
 function calcularDatosReporte(tipo, fecha) {
   if (tipo === "uso") {
     const { inicio, fin } = rangoMes(fecha);
@@ -2208,7 +1853,6 @@ function calcularDatosReporte(tipo, fecha) {
       valores: filas.map((fila) => {
         const total = Number(fila.total || 0);
         if (total > 0) return Math.round((Number(fila.activos || 0) / total) * 100);
-        // Base antigua sin filas de equipos: usar el estado del laboratorio.
         return fila.estado === "disponible" ? 100 : 0;
       })
     };
@@ -2252,7 +1896,6 @@ function calcularDatosReporte(tipo, fecha) {
       };
     }
 
-    // Bases antiguas sin inventario individual: usar la ficha del laboratorio.
     const labs = db.prepare("SELECT equipos, estado FROM laboratorios").all();
     const totalLabs = labs.reduce((n, lab) => n + Number(lab.equipos || 0), 0);
     const enMantencion = labs
@@ -2269,8 +1912,6 @@ function calcularDatosReporte(tipo, fecha) {
   return {};
 }
 
-// Contenido final de un reporte: los tipos conocidos se calculan siempre en el
-// backend; los demás conservan el contenido libre que envíe el cliente.
 function datosDeReporte(tipo, fecha, datosCliente) {
   return TIPOS_REPORTE_CALCULADOS.has(tipo)
     ? calcularDatosReporte(tipo, fecha)
@@ -2278,21 +1919,15 @@ function datosDeReporte(tipo, fecha, datosCliente) {
 }
 
 app.get("/api/reportes", authenticateToken, (req, res) => {
-  // Solo los roles técnicos (admin/programación) ven el listado completo; el
-  // resto únicamente sus propios reportes, igual que en el resto de listados.
   const rows = esTecnico(req)
     ? db.prepare("SELECT * FROM reportes ORDER BY fecha DESC").all()
     : db.prepare("SELECT * FROM reportes WHERE generado_por = ? ORDER BY fecha DESC").all(req.user.id);
-  // El listado no viaja con el base64 de los adjuntos (inflaba cada respuesta):
-  // solo sus metadatos. El detalle sí los trae completos.
   responderLista(req, res, rows.map((r) => repFromRow(r, false)));
 });
 
 app.get("/api/reportes/:id", authenticateToken, (req, res) => {
   const row = db.prepare("SELECT * FROM reportes WHERE id = ?").get(req.params.id);
   if (!row) return res.status(404).json({ error: "Reporte no encontrado" });
-  // Mismo criterio que el listado: los perfiles técnicos ven cualquiera; el
-  // resto, solo los suyos.
   if (!esTecnico(req) && row.generado_por !== req.user.id) {
     return res.status(403).json({ error: "No tienes acceso a este reporte" });
   }
@@ -2305,8 +1940,6 @@ app.post("/api/reportes", authenticateToken, [
   body("descripcion").trim().notEmpty().withMessage("La descripción es obligatoria"),
   body("fecha").optional({ values: "falsy" }).custom(esFechaISOValida).withMessage("La fecha debe ser una fecha real en formato AAAA-MM-DD")
 ], (req, res) => {
-  // Crear reportes es una tarea técnica: se exige el mismo perfil que ve la
-  // sección completa (admin o programación).
   if (!esTecnico(req)) {
     return res.status(403).json({ error: "Solo el administrador o los profesores de programación pueden crear reportes" });
   }
@@ -2346,8 +1979,6 @@ app.patch("/api/reportes/:id", authenticateToken, [
     return res.status(403).json({ error: "Solo el administrador o el creador pueden editar este reporte" });
   }
 
-  // Sin esta comprobación los validadores no bloqueaban nada: una fecha o un tipo
-  // malicioso se guardaban tal cual y se renderizaban sin escapar en el detalle.
   const errores = validationResult(req);
   if (!errores.isEmpty()) {
     return res.status(400).json({ error: errores.array()[0].msg });
@@ -2361,9 +1992,6 @@ app.patch("/api/reportes/:id", authenticateToken, [
 
   const tipoFinal = r.tipo !== undefined ? sanitizarTexto(r.tipo, 50) : actual.tipo;
   const fechaFinal = r.fecha ?? actual.fecha;
-  // Para los tipos calculados se regenera el contenido desde las tablas; así un
-  // cliente no puede inyectar cifras inventadas al editar (ni conservar las
-  // antiguas generadas con Math.random()).
   const datosFinales = TIPOS_REPORTE_CALCULADOS.has(tipoFinal)
     ? calcularDatosReporte(tipoFinal, fechaFinal)
     : (r.datos !== undefined ? r.datos : parsearJSON(actual.datos, {}));
@@ -2404,8 +2032,6 @@ app.delete("/api/reportes/:id", authenticateToken, (req, res) => {
   res.status(204).end();
 });
 
-/* Notificaciones */
-
 app.get("/api/notificaciones", authenticateToken, (req, res) => {
   const usuarioId = req.user.id;
   const rows = db.prepare("SELECT * FROM notificaciones WHERE usuario_id = ? ORDER BY id DESC LIMIT 50").all(usuarioId);
@@ -2436,11 +2062,6 @@ app.delete("/api/notificaciones/:id", authenticateToken, (req, res) => {
   db.prepare("DELETE FROM notificaciones WHERE id = ?").run(req.params.id);
   res.status(204).end();
 });
-
-/* Solicitudes de cambio de especialidad */
-// Los no-admins ya no cambian su área ni su especialidad directamente: la
-// especialidad se solicita y el administrador la aprueba o rechaza desde
-// la notificación que recibe.
 
 app.get("/api/solicitudes-especialidad", authenticateToken, (req, res) => {
   const rows = req.user.rol === "admin"
@@ -2548,17 +2169,12 @@ app.post("/api/solicitudes-especialidad/:id/rechazar", authenticateToken, requir
   res.json(solicitudFromRow(db.prepare("SELECT * FROM solicitudes_especialidad WHERE id = ?").get(solicitud.id)));
 });
 
-/* Configuración */
-
 app.get("/api/config", authenticateToken, (req, res) => {
   const row = db.prepare("SELECT data FROM config WHERE id = 1").get();
   if (!row) return res.status(404).json({ error: "Configuración no encontrada" });
   res.json(configParaUsuario(JSON.parse(row.data), req.user?.rol));
 });
 
-// Esquema de configuración: solo se admiten las secciones y claves conocidas,
-// con sus tipos y rangos. Antes un PATCH arbitrario podía guardar, por ejemplo,
-// `anticipacionMaxReserva: -1` y bloquear todas las reservas futuras (M-08).
 const CONFIG_ESQUEMA = {
   sitio: {
     nombreInstitucion: (v) => typeof v === "string" && v.trim().length >= 1 && v.length <= 120,
@@ -2633,7 +2249,6 @@ app.patch("/api/config", authenticateToken, requireAdmin, (req, res) => {
     return res.status(400).json({ error: "Configuración inválida", details: errores });
   }
 
-  // Merge de un nivel sobre las claves ya validadas.
   for (const [seccion, valor] of Object.entries(req.body)) {
     if (CLAVES_NO_DATOS.has(seccion)) continue;
     const permitidas = CONFIG_ESQUEMA[seccion];
@@ -2649,20 +2264,9 @@ app.patch("/api/config", authenticateToken, requireAdmin, (req, res) => {
   res.json(nuevo);
 });
 
-/* Sitio estático (public/) — sin servir archivos ocultos (dotfiles)
-
-   El mismo proceso sirve la web y la API, así que basta una sola URL y no hace
-   falta proxy. La carpeta del sitio se puede mover con LC_PUBLIC_DIR cuando el
-   despliegue no copia `public/` al lado de `backend/` (por ejemplo, con el Root
-   Directory de un hosting en `website/backend`), en vez de fallar en silencio con
-   un "Cannot GET /" que no dice nada del motivo. */
-
 const dirSitio = path.resolve(process.env.LC_PUBLIC_DIR || path.join(__dirname, "..", "public"));
 const sitioDentro = fs.existsSync(path.join(dirSitio, "index.html"));
 
-// Igual que _redirects en Cloudflare: una URL histórica con .html redirige a la
-// limpia para que la extensión no aparezca en la barra del navegador. Se aplica
-// antes de express.static, que por defecto serviría el archivo con un 200.
 const PAGINAS_HTML = new Set([
   "index", "login", "laboratorios", "disponibilidad",
   "equipos", "reportes", "usuarios", "configuracion"
@@ -2680,22 +2284,15 @@ app.use((req, res, next) => {
 app.use(express.static(dirSitio, {
   dotfiles: "deny",
   index: ["index.html"],
-  // URLs públicas limpias: /login sirve login.html. Las rutas /api/* ya están
-  // registradas antes, así que no se ven afectadas.
   extensions: ["html"]
 }));
 
-/* Manejo de errores */
-
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   if (err?.status) return res.status(err.status).json({ error: err.message });
   if (err?.type === "entity.parse.failed") return res.status(400).json({ error: "JSON inválido en el cuerpo de la petición" });
   console.error(err);
   res.status(500).json({ error: "Error interno del servidor" });
 });
-
-/* Arranque: solo si este archivo es el punto de entrada (node server.js) */
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (PRODUCCION && !(process.env.LC_PUBLIC_URL || "").trim()) {
@@ -2703,7 +2300,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.exit(1);
   }
   const servidor = app.listen(PORT, () => {
-    console.log(`\n  LabControl Liceo v4.9.0`);
+    console.log(`\n  LabControl v4.9`);
     if (sitioDentro) {
       console.log(`  API + sitio corriendo en: http://localhost:${PORT}/login`);
     } else {
@@ -2714,8 +2311,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(`  Seguridad: JWT + bcrypt + rate limiting + helmet\n`);
   });
 
-  // Tiempos de espera del socket: una conexión lenta o abandonada no puede
-  // mantener un descriptor abierto indefinidamente (Slowloris).
   servidor.headersTimeout = 65_000;
   servidor.requestTimeout = 120_000;
   servidor.keepAliveTimeout = 61_000;

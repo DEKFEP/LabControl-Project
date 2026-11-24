@@ -1,16 +1,5 @@
-/* data.js — cliente de la API; el modo demo es explícito (?demo=1), nunca un
-   respaldo automático ante errores de red o rutas no encontradas. */
-
-// Ruta relativa, sin barra inicial: el sitio puede servirse en la raíz de un
-// dominio o dentro de un subdirectorio (GitHub Pages lo publica en
-// /LabControl-Project/), y en ambos casos la API cuelga de la misma carpeta
-// que el HTML que la está pidiendo.
 const API_BASE = "api";
 
-/* Política de contraseñas (misma que el servidor, en server.js): longitud mínima
-   10 y variedad (minúscula, mayúscula y número). Se usa para dar
-   retroalimentación inmediata; la API vuelve a validar. Devuelve el mensaje de
-   error o null. */
 export const MIN_PASSWORD = 10;
 export const MAX_PASSWORD_BYTES = 72;
 export function errorPassword(pw) {
@@ -23,15 +12,9 @@ export function errorPassword(pw) {
   return null;
 }
 
-/* Modo demo: SOLO se activa con ?demo=1 o window.LC_FORZAR_DEMO = true.
-   Nunca se activa porque la API no responda: mostrar datos ficticios como si
-   fueran reales es precisamente el hallazgo M-05 de la auditoría. */
-
 const DEMO_EXPLICITO =
   new URLSearchParams(window.location.search).get("demo") === "1" ||
   window.LC_FORZAR_DEMO === true;
-// Credencial única del modo demostración. Es pública porque el propio cliente
-// es de código abierto, pero al menos no se acepta cualquier contraseña.
 export const DEMO_PASSWORD = "Demo12345";
 
 let MODO_DEMO = false;
@@ -74,15 +57,11 @@ function activarModoDemo() {
       console.error("[LabControl] No se pudieron cargar los datos de demostración.");
       resolve(false);
     };
-    // Los scripts de página viven en la raíz y los módulos en js/, así que el
-    // relleno de demo se pide con la ruta desde la página, no desde este módulo.
     s.src = "js/datos-demo.js";
     document.head.appendChild(s);
   });
 }
 
-// Se resuelve antes de la primera petición; así el modo demo ya está listo
-// cuando se decide entre la API real y los datos locales.
 const DEMO_LISTO = activarModoDemo();
 
 const copia = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
@@ -158,11 +137,6 @@ function demoRequest(metodo, ruta, cuerpo) {
     return !!(s && (s.rol === "admin" || s.rol === "programacion"));
   })();
 
-  // Rutas con sub-acción (recurso/acción): el switch principal agrupa por
-  // recurso e id (clave "metodo recurso[_x]"), así que estas se atienden por
-  // su ruta completa para no colisionar entre sí.
-  // Estado 2FA simulado en modo demo: se persiste para que sobreviva a
-  // recargas de página (igual que el servidor lo guarda en la BD).
   const demo2faEstado = () => {
     try { return localStorage.getItem("lc_2fa_demo") === "1"; } catch { return false; }
   };
@@ -286,7 +260,6 @@ function demoRequest(metodo, ruta, cuerpo) {
       const i = D.usuarios.findIndex((u) => u.id === id);
       if (i === -1) throw new Error("Usuario no encontrado");
       if (id === AUTH.getSesion()?.id) throw new Error("No puedes eliminar tu propio usuario");
-      // Desvincular reportes y solicitudes resueltas (equivalente al backend).
       D.reportes.forEach((r) => { if (r.generadoPor === id) r.generadoPor = null; });
       D.solicitudes.forEach((s) => { if (s.resueltaPor === id) s.resueltaPor = null; });
       D.usuarios.splice(i, 1);
@@ -338,7 +311,6 @@ function demoRequest(metodo, ruta, cuerpo) {
     case "GET reportes": {
       const sesion = AUTH.getSesion();
       const lista = demoEsTecnico ? D.reportes : D.reportes.filter((r) => r.generadoPor === sesion?.id);
-      // Igual que el backend: el listado no arrastra el base64 de los adjuntos.
       return copia(lista.map((r) => ({
         ...r,
         adjuntos: (r.adjuntos ?? []).map((a) => ({ nombre: a.nombre, tipo: a.tipo, tamano: a.tamano }))
@@ -511,15 +483,11 @@ function demoRequest(metodo, ruta, cuerpo) {
       return copia(D.config);
 
     case "POST login": {
-      // En modo demo no se publican contraseñas de cuentas reales: se exige la
-      // credencial única de demostración, mostrada en el banner de la página.
       const usuario = String(cuerpo?.usuario ?? "").trim().toLowerCase();
       const usr = D.usuarios.find(
         (u) => u.id.toLowerCase() === usuario || String(u.email).toLowerCase() === usuario
       );
       if (!usr || String(cuerpo?.password ?? "") !== DEMO_PASSWORD) throw new Error("Credenciales incorrectas");
-      // Las cuentas pendientes de aprobación no pueden iniciar sesión (igual que
-      // en la API real, que las trata como credenciales inválidas).
       if (usr.activo === false) throw new Error("Credenciales incorrectas");
       const { password, ...sinPassword } = usr;
       if (demo2faEstado()) {
@@ -536,7 +504,6 @@ function demoRequest(metodo, ruta, cuerpo) {
       const nueva = String(cuerpo?.newPassword ?? "");
       const err = errorPassword(nueva);
       if (err) throw new Error(err);
-      // El modo demo no almacena contraseñas reales; el cambio es simbólico.
       return { ok: true };
     }
 
@@ -559,9 +526,7 @@ function demoRequest(metodo, ruta, cuerpo) {
         rol: "otro_area",
         area: String(u.area ?? ""),
         especialidad: String(u.especialidad ?? ""),
-        // Sin nivel de acceso: lo otorga el administrador desde la ficha del usuario.
         nivelAcceso: null,
-        // La cuenta queda inactiva hasta que un administrador la apruebe.
         activo: false
       };
       D.usuarios.push(nuevo);
@@ -584,20 +549,20 @@ function demoRequest(metodo, ruta, cuerpo) {
       const email = String(cuerpo?.email ?? "").trim().toLowerCase();
       const usr = D.usuarios.find((x) => String(x.email).toLowerCase() === email);
       if (!usr) return { ok: true };
-      try { sessionStorage.setItem("lc_reset_demo", usr.id); } catch { /* sin almacenamiento */ }
+      try { sessionStorage.setItem("lc_reset_demo", usr.id); } catch {}
       return { ok: true, demo: true, usuario: usr.id };
     }
 
     case "POST recuperar-contrasena_x": {
       let uid = null;
-      try { uid = sessionStorage.getItem("lc_reset_demo"); } catch { /* sin almacenamiento */ }
+      try { uid = sessionStorage.getItem("lc_reset_demo"); } catch {}
       const usr = D.usuarios.find((x) => x.id === uid && String(id) === "demo_reset_token");
       if (!usr) throw new Error("El enlace de restablecimiento es inválido o expiró");
       const pass = String(cuerpo?.newPassword ?? "");
       const errReset = errorPassword(pass);
       if (errReset) throw new Error(errReset);
       usr.password = pass;
-      try { sessionStorage.removeItem("lc_reset_demo"); } catch { /* sin almacenamiento */ }
+      try { sessionStorage.removeItem("lc_reset_demo"); } catch {}
       return { ok: true, usuario: usr.id };
     }
 
@@ -614,14 +579,8 @@ function demoRequest(metodo, ruta, cuerpo) {
   }
 }
 
-/* Peticiones a la API (con JWT) */
-
-// Renovación de sesión (single-flight): evita refrescar dos veces en paralelo.
 let _refrescando = null;
 
-// Guarda solo los datos públicos de la sesión (id, rol, nombre…). Los tokens
-// viajan en cookies HttpOnly y NO se guardan en localStorage: así un XSS no
-// puede robarlos del almacenamiento del navegador.
 function actualizarSesion(usuario) {
   const sesion = {
     id: usuario.id,
@@ -632,15 +591,12 @@ function actualizarSesion(usuario) {
     email: usuario.email,
     nivelAcceso: usuario.nivelAcceso
   };
-  try { localStorage.setItem("lc_sesion", JSON.stringify(sesion)); } catch { /* sin almacenamiento */ }
+  try { localStorage.setItem("lc_sesion", JSON.stringify(sesion)); } catch {}
   return sesion;
 }
 
 async function renovarSesion() {
   if (_refrescando) return _refrescando;
-  // Web Locks serializa el refresh entre pestañas del mismo origen: evita que
-  // dos pestañas roten el token a la vez. Sin esto, la segunda usaría el token
-  // ya revocado, el servidor lo leería como reuso y cerraría todas las sesiones.
   const ejecutar = async () => {
     if (globalThis.navigator?.locks?.request) {
       let ok = false;
@@ -654,8 +610,6 @@ async function renovarSesion() {
 }
 
 async function pedirRefresh() {
-  // La sesión mínima (id/rol) es lo que decide si vale la pena refrescar; el
-  // token de refresco lo aporta la cookie HttpOnly que envía el navegador.
   const sesion = AUTH.getSesion();
   if (!sesion) return false;
   try {
@@ -674,13 +628,10 @@ async function pedirRefresh() {
   }
 }
 
-// Avisa al service worker de que debe soltar el inventario cacheado. Se llama
-// al entrar, al salir y ante un 401: la caché no distingue roles y no puede
-// conservar datos de la sesión anterior en un equipo compartido (M-09).
 export function limpiarCacheApi() {
   try {
     navigator.serviceWorker?.controller?.postMessage({ type: "limpiar-cache-api" });
-  } catch { /* sin service worker */ }
+  } catch {}
 }
 
 async function pedir(ruta, opciones = {}, _reintentado = false) {
@@ -697,34 +648,21 @@ async function pedir(ruta, opciones = {}, _reintentado = false) {
     try {
       const res = await fetch(`${API_BASE}${ruta}`, { credentials: "same-origin", ...opciones });
 
-      // Token de acceso expirado: se renueva una sola vez con el refresh token
-      // y se reintenta la petición original antes de cerrar la sesión.
       if (res.status === 401 && !_reintentado && (await renovarSesion())) {
         return pedir(ruta, { ...opciones, headers: authHeaders() }, true);
       }
 
       if (res.status === 401) {
         const err = await res.json().catch(() => ({}));
-        // La caché de inventario puede pertenecer a otro rol: se descarta antes
-        // de cerrar la sesión (M-09).
         limpiarCacheApi();
-        // Solo se cierra la sesión si realmente había una. Antes, un 401 del
-        // propio login (usuario o contraseña incorrectos) terminaba en
-        // AUTH.logout() → window.location, así que el mensaje de error nunca se
-        // veía y el formulario se recargaba vacío.
         if (AUTH.getSesion()) AUTH.logout();
         throw new Error(err.error || "No autorizado. Inicia sesión nuevamente.");
       }
 
-      // 204 = éxito sin cuerpo (p. ej. eliminar usuario/reserva/reporte). No trae
-      // Content-Type, así que hay que resolverlo antes de la comprobación de
-      // "contenido inesperado", que si no lo confunde con una respuesta rota.
       if (res.status === 204) return null;
 
       const tipo = res.headers.get("content-type") ?? "";
       if (!tipo.includes("json")) {
-        // Ni un 404/405 ni un HTML de proxy activan ya el modo demo: eso
-        // hacía que una mala configuración mostrara datos falsos como reales.
         throw new Error(`El servidor respondió con un contenido inesperado (${res.status || "sin estado"}). Revisa la conexión o la URL de la API.`);
       }
       if (!res.ok) {
@@ -743,8 +681,6 @@ async function pedir(ruta, opciones = {}, _reintentado = false) {
   return demoRequest(metodo, ruta, cuerpo);
 }
 
-// Cabeceras para las peticiones a la API. Ya no se adjunta el token de acceso:
-// viaja en la cookie HttpOnly que el navegador añade solo (credentials).
 function authHeaders(extra = {}) {
   return { "Content-Type": "application/json", ...extra };
 }
@@ -761,8 +697,6 @@ export async function apiSend(method, path, body) {
   });
 }
 
-/* Estados */
-
 export const ESTADOS = {
   disponible: { label: "Disponible", color: "#48bb78" },
   ocupado:    { label: "Ocupado",    color: "#f56565" },
@@ -776,8 +710,6 @@ export const ESTADOS_EQUIPO = {
   apagado:    { label: "Apagado",    clase: "badge--muted" }
 };
 
-/* Laboratorios */
-
 export function cargarLaboratorios() {
   return apiGet("/laboratorios");
 }
@@ -790,13 +722,9 @@ export function actualizarEstadoLaboratorio(id, estado) {
   return apiSend("PATCH", `/laboratorios/${id}`, { estado });
 }
 
-/* Equipos */
-
 export function cargarEquipos(labId = null) {
   return apiGet(labId ? `/equipos?labId=${labId}` : "/equipos");
 }
-
-/* Usuarios */
 
 export function cargarUsuarios() {
   return apiGet("/usuarios");
@@ -823,8 +751,6 @@ export function eliminarUsuario(id) {
   return apiSend("DELETE", `/usuarios/${id}`);
 }
 
-/* Agenda / reservas */
-
 export function cargarAgenda() {
   return apiGet("/agenda");
 }
@@ -836,8 +762,6 @@ export function crearReserva(reserva) {
 export function eliminarReserva(id) {
   return pedir(`/agenda/${id}`, { method: "DELETE", headers: authHeaders() });
 }
-
-/* Reportes */
 
 export function cargarReportes() {
   return apiGet("/reportes");
@@ -859,8 +783,6 @@ export function eliminarReporte(id) {
   return pedir(`/reportes/${id}`, { method: "DELETE", headers: authHeaders() });
 }
 
-/* Notificaciones */
-
 export function cargarNotificaciones(usuarioId) {
   return apiGet("/notificaciones");
 }
@@ -872,8 +794,6 @@ export function marcarNotificacionLeida(id) {
 export function marcarTodasNotificaciones() {
   return apiSend("POST", "/notificaciones/leer-todas", {});
 }
-
-/* Solicitudes de cambio de especialidad */
 
 export function cargarSolicitudesEspecialidad() {
   return apiGet("/solicitudes-especialidad");
@@ -890,8 +810,6 @@ export function solicitarCambioEspecialidad(especialidad) {
 export function resolverSolicitudEspecialidad(id, accion) {
   return apiSend("POST", `/solicitudes-especialidad/${id}/${accion}`, {});
 }
-
-/* Auditoría, verificación en dos pasos y respaldos */
 
 export async function cargarAuditoria(filtros = {}) {
   const q = new URLSearchParams();
@@ -919,14 +837,12 @@ export function desactivar2FA(codigo) {
   return apiSend("POST", "/2fa/desactivar", { codigo });
 }
 
-// Descarga el respaldo de la BD como blob binario.
 export async function exportarBackup() {
   const res = await fetch(`${API_BASE}/backups/exportar`, { headers: authHeaders(), credentials: "same-origin" });
   if (!res.ok) throw new Error("No se pudo generar el respaldo");
   return res.blob();
 }
 
-// Restaura la BD desde un archivo .db (el servidor revoca las demás sesiones).
 export async function restaurarBackup(archivo) {
   try {
     const res = await fetch(`${API_BASE}/backups/restaurar`, {
@@ -948,8 +864,6 @@ export async function restaurarBackup(archivo) {
   }
 }
 
-/* Configuración */
-
 export function cargarConfig() {
   return apiGet("/config");
 }
@@ -958,13 +872,7 @@ export function actualizarConfig(cambios) {
   return apiSend("PATCH", "/config", cambios);
 }
 
-/* Sesión (AUTH) */
-
 export const AUTH = {
-  // Inicia sesión en la API. Si el admin tiene 2FA devuelve { requires2FA,
-  // loginId, usuario } para completar el segundo paso; si no, el usuario.
-  // Lanza el error del servidor (401/429) para que el formulario pueda mostrar
-  // el motivo real en vez de un "no se pudo ingresar" genérico.
   async login(username, password) {
     try {
       const data = await apiSend("POST", "/login", { usuario: username, password });
@@ -982,7 +890,6 @@ export const AUTH = {
     }
   },
 
-  // Segundo paso del login (código TOTP) para sesiones con 2FA.
   async verificar2fa(loginId, codigo) {
     try {
       if (MODO_DEMO) {
@@ -1015,30 +922,20 @@ export const AUTH = {
     }
   },
 
-  // Registro autónomo: crea la cuenta con rol "otro_area", sin nivel de acceso
-  // (lo otorga el administrador desde la ficha del usuario) y pendiente de
-  // aprobación. La respuesta trae un `mensaje` para mostrar al usuario.
   async registro(datos) {
     return apiSend("POST", "/registro", datos);
   },
 
-  // Solicita un enlace de restablecimiento para el correo dado. La respuesta
-  // es genérica (nunca revela si la cuenta existe); en modo demo incluye la
-  // marca `demo: true` para permitir completar el flujo sin servidor.
   async solicitarRecuperacion(email) {
     const data = await apiSend("POST", "/recuperar-contrasena", { email });
     return data || { ok: true };
   },
 
-  // Completa el restablecimiento con el token del enlace y la nueva contraseña.
   async restablecerContrasena(token, newPassword) {
     return apiSend("POST", `/recuperar-contrasena/${token}`, { newPassword });
   },
 
   async logout() {
-    // `await` + `keepalive`: la navegación siguiente no puede cancelar la
-    // revocación del refresh token (M-12). El timeout evita esperar para siempre
-    // si la red está caída; en ese caso se limpia igualmente el cliente.
     const control = typeof AbortController === "function" ? new AbortController() : null;
     const temporizador = control ? setTimeout(() => control.abort(), 2000) : null;
     try {
@@ -1049,32 +946,24 @@ export const AUTH = {
         keepalive: true,
         signal: control?.signal
       });
-    } catch { /* sin red: se limpia igualmente el cliente */ }
+    } catch {}
     finally {
       if (temporizador) clearTimeout(temporizador);
     }
     limpiarCacheApi();
-    try { localStorage.removeItem("lc_sesion"); } catch { /* sin almacenamiento */ }
-    try { sessionStorage.removeItem("lc_reset_demo"); } catch { /* sin almacenamiento */ }
+    try { localStorage.removeItem("lc_sesion"); } catch {}
+    try { sessionStorage.removeItem("lc_reset_demo"); } catch {}
     window.location.href = "login";
   },
 
-  // El localStorage es solo una caché: el rol real lo decide el servidor con la
-  // cookie HttpOnly. Las páginas deben usar esta función antes de decidir qué
-  // menú o botones mostrar (B-08).
   async sesionVerificada() {
     if (MODO_DEMO) return this.getSesion();
     try {
       const datos = await apiGet("/me");
       if (!datos?.usuario) return null;
-      // actualizarSesion reescribe lc_sesion con lo que dijo el servidor: el
-      // rol y el id del localStorage dejan de ser la fuente de la decisión.
       return actualizarSesion(datos.usuario);
     } catch {
-      // Ante 401, red caída o API no disponible NO se devuelve la sesión del
-      // localStorage: eso permitiría falsear el rol editando el almacenamiento.
-      // También se borra la copia local para que AUTH.esAdmin() no la use.
-      try { localStorage.removeItem("lc_sesion"); } catch { /* sin almacenamiento */ }
+      try { localStorage.removeItem("lc_sesion"); } catch {}
       return null;
     }
   },
@@ -1097,9 +986,6 @@ export const AUTH = {
     return sesion;
   },
 
-  // Acceso técnico: el admin siempre lo tiene; para el resto lo determina el
-  // nivel de acceso (tecnico/total) que otorga el administrador, no el rol. Un
-  // profesor de programación con acceso básico no ve el hardware.
   tieneAccesoTecnico(sesion) {
     const s = sesion || this.getSesion();
     return !!s && (s.rol === "admin" || s.nivelAcceso === "tecnico" || s.nivelAcceso === "total");

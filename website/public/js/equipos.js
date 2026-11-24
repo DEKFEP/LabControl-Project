@@ -164,8 +164,6 @@ cabecera.onpointerdown = e => {
 cabecera.onpointermove = e => {
   if (gesto?.id === e.pointerId) hoja.style.transform = `translateY(${Math.max(0, e.clientY - gesto.inicio)}px)`;
 };
-// Mantener la capa hasta consumir el final del toque evita que el navegador
-// sintetice un clic sobre la fila que aparece debajo de la hoja.
 let cerrarPorGesto = false;
 cabecera.onpointerup = e => {
   if (gesto?.id !== e.pointerId) return;

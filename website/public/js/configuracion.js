@@ -1,8 +1,6 @@
-/* Imports (ES modules) */
 import { AUTH, ESTADOS, actualizarConfig, actualizarUsuario, apiSend, cargarAuditoria, cargarConfig, cargarEquipos, cargarEstado2FA, cargarLaboratorios, cargarSolicitudEspecialidad, cargarSolicitudesEspecialidad, cargarUsuarios, desactivar2FA, errorPassword, exportarBackup, iniciarConfiguracion2FA, resolverSolicitudEspecialidad, restaurarBackup, solicitarCambioEspecialidad, verificarConfiguracion2FA } from "./data.js";
 import { abrirModal, activarNotificacionesSistema, actualizarIconosLucide, esc, renderSidebar, rolLabel, showToast } from "./app.js";
 
-/* Valores por defecto de configuración (espejo del backend, db.js). */
 const CONFIG_DEFAULT = {
   sitio: { nombreInstitucion: "Instituto Superior de Comercio", nombreSistema: "LabControl", logo: "", tema: "claro", idioma: "es" },
   red: { subredLabs: "192.168.10.0/24", servidorDNS: "192.168.1.1", puertaEnlace: "192.168.1.254", wifiHabilitado: true },
@@ -12,15 +10,11 @@ const CONFIG_DEFAULT = {
   equipos: { habilitarControlRemoto: true, apagadoAutomatico: false, monitoreoTiempoReal: true, intervaloEncendido: 30 }
 };
 
-/* configuracion.js — lógica de la página Configuración. */
 await renderSidebar("configuracion");
 const esAdmin = AUTH.esAdmin();
 const sesion  = AUTH.getSesion();
-// La verificación en dos pasos solo se ofrece a cuentas con acceso técnico o de
-// administración; el resto de los roles no la ven.
 const puede2FA = AUTH.puedeVerTecnico();
 
-// Se llenan cuando responde la API; las funciones de abajo los usan al interactuar.
 let config = null;
 let usuario = null;
 let usuariosTotal = [];
@@ -51,9 +45,6 @@ Promise.all([
   misSolicitudes = solicitudes || [];
   iniciarPantalla();
 }).catch((err) => {
-  // Un endpoint que falle (red, límite de peticiones, error 5xx) no debe dejar
-  // la página en blanco para siempre: se muestra el perfil con valores por
-  // defecto y se avisa, igual que hacen las demás páginas con su carga inicial.
   console.error("[configuracion] No se pudo cargar la configuración completa:", err);
   config = CONFIG_DEFAULT;
   usuariosTotal = [];
@@ -69,15 +60,12 @@ function iniciarPantalla() {
       "Configuración completa del sistema — modo Administrador";
   }
 
-  /* Tema activo */
   const activo = temaActivo();
   document.documentElement.dataset.theme = activo;
   if (config?.sitio) config.sitio.tema = activo;
 
-  /* Tamaño de texto accesible */
   aplicarTamanoTexto(tamanoTextoGuardado());
 
-  /* Secciones */
   const SECCIONES_BASE = [
     { id: "perfil",           icon: "user",     label: "Mi perfil" },
     { id: "apariencia",       icon: "palette",  label: "Apariencia" },
@@ -98,7 +86,6 @@ function iniciarPantalla() {
 
   secciones = esAdmin ? [...SECCIONES_BASE, ...SECCIONES_ADMIN] : SECCIONES_BASE;
 
-  /* Menú lateral */
   const sidenav = document.getElementById("cfg-sidenav");
   sidenav.innerHTML = secciones.map((s, i) => `
     <button class="cfg-nav-btn ${i === 0 ? "is-active" : ""}"
@@ -107,7 +94,6 @@ function iniciarPantalla() {
     </button>
   `).join("");
 
-  /* Paneles */
   const panels = document.getElementById("cfg-panels");
   panels.innerHTML = secciones.map((s, i) => `
     <div class="cfg-panel ${i === 0 ? "is-active" : ""}" id="panel-${s.id}">
@@ -121,7 +107,6 @@ function iniciarPantalla() {
   refrescarHintsPerfil();
   actualizarIconosLucide();
 
-  /* Contenido dinámico de secciones nuevas */
   if (puede2FA) refrescarEstado2FA();
   if (esAdmin) cargarAuditoriaPanel();
 }
@@ -155,7 +140,6 @@ function cambiarSeccion(id) {
 
 function buildPanel(id) {
   switch (id) {
-    /* Perfil */
     case "perfil": return `
       <h2 class="cfg-panel__title">Mi perfil</h2>
       <div class="cfg-section">
@@ -210,7 +194,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Apariencia */
     case "apariencia": return `
       <h2 class="cfg-panel__title">Apariencia</h2>
       <div class="cfg-section">
@@ -239,7 +222,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Notificaciones */
     case "notificaciones": return `
       <h2 class="cfg-panel__title">Notificaciones</h2>
       ${!esAdmin ? `
@@ -281,7 +263,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Seguridad */
     case "seguridad": return `
       <h2 class="cfg-panel__title">Seguridad de la cuenta</h2>
       <div class="cfg-section">
@@ -313,7 +294,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Sitio (admin) */
     case "sitio": return `
       <h2 class="cfg-panel__title">Configuración del sitio web</h2>
       <div class="cfg-admin-badge"><i data-lucide="key-round"></i> Solo administradores</div>
@@ -336,7 +316,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Laboratorios (admin) */
     case "laboratorios-cfg": return `
       <h2 class="cfg-panel__title">Configuración de laboratorios</h2>
       <div class="cfg-admin-badge"><i data-lucide="key-round"></i> Solo administradores</div>
@@ -365,7 +344,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Equipos (admin) */
     case "equipos-cfg": return `
       <h2 class="cfg-panel__title">Configuración de equipos</h2>
       <div class="cfg-admin-badge"><i data-lucide="key-round"></i> Solo administradores</div>
@@ -395,7 +373,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Red (admin) */
     case "red": return `
       <h2 class="cfg-panel__title">Configuración de red</h2>
       <div class="cfg-admin-badge"><i data-lucide="key-round"></i> Solo administradores</div>
@@ -422,7 +399,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Usuarios (admin) */
     case "usuarios-cfg": return `
       <h2 class="cfg-panel__title">Configuración de usuarios</h2>
       <div class="cfg-admin-badge"><i data-lucide="key-round"></i> Solo administradores</div>
@@ -450,7 +426,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Auditoría (admin) */
     case "auditoria": return `
       <h2 class="cfg-panel__title">Auditoría de actividad</h2>
       <div class="cfg-admin-badge"><i data-lucide="key-round"></i> Solo administradores</div>
@@ -482,7 +457,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Respaldos de la base de datos (admin) */
     case "backups": return `
       <h2 class="cfg-panel__title">Respaldos de la base de datos</h2>
       <div class="cfg-admin-badge"><i data-lucide="key-round"></i> Solo administradores</div>
@@ -504,7 +478,6 @@ function buildPanel(id) {
       </div>
     `;
 
-    /* Sistema (admin) */
     case "sistema": return `
       <h2 class="cfg-panel__title">Sistema</h2>
       <div class="cfg-admin-badge"><i data-lucide="key-round"></i> Solo administradores</div>
@@ -512,7 +485,7 @@ function buildPanel(id) {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
           <div class="cfg-sys-card">
             <div class="cfg-sys-card__label">Versión del sistema</div>
-            <div class="cfg-sys-card__value">LabControl v4.9.0</div>
+            <div class="cfg-sys-card__value">LabControl v4.9</div>
           </div>
           <div class="cfg-sys-card">
             <div class="cfg-sys-card__label">Total laboratorios</div>
@@ -539,8 +512,6 @@ function buildPanel(id) {
   }
 }
 
-// Helpers de UI
-
 function toggleSwitch(id) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -548,7 +519,6 @@ function toggleSwitch(id) {
   el.setAttribute("aria-checked", String(activo));
 }
 
-// Notificaciones del sistema
 function actualizarEstadoNotifUI() {
   const btn   = document.getElementById("btn-activar-notif");
   const estado = document.getElementById("estado-notif");
@@ -628,13 +598,11 @@ async function cambiarContrasena() {
   }
 }
 
-// Guardar cambios
 document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
   const tareas = [];
   const errs = [];
   const cambiosCfg = {};
 
-  // Perfil (nombre, apellido, correo y, solo para admin, área y especialidad)
   const nombre   = document.getElementById("p-nombre")?.value.trim();
   const apellido = document.getElementById("p-apellido")?.value.trim();
   const correo   = document.getElementById("p-email")?.value.trim();
@@ -651,8 +619,6 @@ document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
   if (usuario && esAdmin && espec !== undefined) cambioUsr.especialidad = espec;
   if (usuario && Object.keys(cambioUsr).length) {
     tareas.push(actualizarUsuario(usuario.id, cambioUsr).then((res) => {
-      // El token renovado viaja en la cookie HttpOnly; aquí solo se actualizan
-      // los datos públicos de la sesión para que el menú refleje el cambio.
       if (res) {
         const prev = AUTH.getSesion();
         if (prev) {
@@ -669,8 +635,6 @@ document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
     }));
   }
 
-  // Los no-admins cambian la especialidad mediante una solicitud que el
-  // administrador aprueba o rechaza; el área no la pueden modificar.
   if (usuario && !esAdmin && espec !== undefined && espec && espec !== usuario.especialidad) {
     tareas.push(solicitarCambioEspecialidad(espec).then((sol) => {
       misSolicitudes = (misSolicitudes || []).filter((s) => s.usuarioId === usuario.id);
@@ -680,12 +644,10 @@ document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
     }));
   }
 
-  // Tamaño de texto (preferencia local)
   aplicarTamanoTexto(document.getElementById("p-texto")?.value);
 
   const toggles = (id) => { const el = document.getElementById(id); return el ? el.classList.contains("toggle--on") : undefined; };
 
-  // Sitio
   const sit = {};
   if (config?.sitio) {
     const inst = document.getElementById("cfg-inst")?.value.trim();
@@ -698,7 +660,6 @@ document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
   }
   if (Object.keys(sit).length) cambiosCfg.sitio = sit;
 
-  // Red
   const red = {};
   if (config?.red) {
     const subred  = document.getElementById("cfg-subred")?.value.trim();
@@ -712,7 +673,6 @@ document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
   }
   if (Object.keys(red).length) cambiosCfg.red = red;
 
-  // Laboratorios
   const labs = {};
   if (config?.laboratorios) {
     const apertura = document.getElementById("cfg-apertura")?.value;
@@ -729,7 +689,6 @@ document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
   }
   if (Object.keys(labs).length) cambiosCfg.laboratorios = labs;
 
-  // Equipos
   const eqs = {};
   const remoto    = toggles("tog-remoto");
   const apagado   = toggles("tog-apagado");
@@ -744,7 +703,6 @@ document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
   }
   if (Object.keys(eqs).length) cambiosCfg.equipos = eqs;
 
-  // Notificaciones
   const notif = {};
   const togglesNotif = {
     "n-reservas":    "alertaReservas",
@@ -766,7 +724,6 @@ document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
   }
   if (Object.keys(notif).length) cambiosCfg.notificaciones = notif;
 
-  // Seguridad
   const seg = {};
   const timeout  = Number(document.getElementById("cfg-timeout")?.value);
   const intentos = Number(document.getElementById("cfg-intentos")?.value);
@@ -784,8 +741,6 @@ document.getElementById("btn-guardar-cfg").addEventListener("click", () => {
 
   if (errs.length) { showToast(errs[0], "error"); return; }
 
-  // La configuración avanzada (sitio, red, laboratorios, equipos, notificaciones y
-  // seguridad) es exclusiva del administrador; los demás solo guardan su perfil.
   if (esAdmin && Object.keys(cambiosCfg).length) tareas.push(actualizarConfig(cambiosCfg));
 
   if (!tareas.length) {
@@ -819,7 +774,6 @@ function restablecerConfiguracion() {
     .catch(() => showToast("No se pudo restablecer la configuración.", "error"));
 }
 
-// Ayuda se abre desde la tarjeta de PC o desde la cabecera en celular.
 function abrirAyudaDesdePerfil() {
   if (location.hash === "#ayuda") abrirAyuda("faq");
 }
@@ -841,8 +795,6 @@ function abrirAyuda(opcion) {
   const modal  = document.getElementById("modal-ayuda");
   if (!titulo || !cuerpo) return;
 
-  // La vista de Acerca de tiene tres secciones largas, asi que el modal se
-  // ensancha en escritorio (ver `#modal-ayuda[data-opcion="acerca"]`).
   if (modal) modal.dataset.opcion = opcion;
 
   if (opcion === "faq") {
@@ -944,7 +896,7 @@ function contenidoAcerca() {
       <div style="font-size:.85rem;color:var(--color-text-muted)">Sistema de control y supervisión de los laboratorios de computación del liceo.</div>
       <div class="cfg-sys-card" style="margin:18px auto 0;max-width:260px">
         <div class="cfg-sys-card__label">Versión del sistema</div>
-        <div class="cfg-sys-card__value">LabControl v4.9.0</div>
+        <div class="cfg-sys-card__value">LabControl v4.9</div>
       </div>
       <div class="cfg-sys-card" style="margin:10px auto 0;max-width:260px">
         <div class="cfg-sys-card__label">Institución</div>
@@ -1031,9 +983,6 @@ function contenidoAcerca() {
     </div>`;
 }
 
-/* Delegación de eventos: el CSP estricto bloquea atributos onclick/onchange
-   inline, incluso los generados por innerHTML, así que los manejadores se
-   registran aquí una sola vez sobre el documento. */
 document.addEventListener("click", (e) => {
   const nav = e.target.closest("[data-section]");
   if (nav) { cambiarSeccion(nav.dataset.section); return; }
@@ -1073,8 +1022,6 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "p-texto") aplicarTamanoTexto(e.target.value);
   if (e.target.id === "input-backup-archivo") { restaurarBackupDesdeInput(); return; }
 });
-
-/* ===== Verificación en dos pasos ===== */
 
 async function refrescarEstado2FA() {
   const desc = document.getElementById("s-2fa-desc");
@@ -1152,7 +1099,6 @@ async function confirmarModal2FA() {
   try {
     if (accion === "activar") await verificarConfiguracion2FA(codigo);
     else await desactivar2FA(codigo);
-    // Cierra el modal por su botón (libera también los listeners de abrirModal).
     const cierreBoton = document.querySelector("#modal-2fa .modal__close");
     if (cierreBoton) cierreBoton.click();
     showToast(
@@ -1169,8 +1115,6 @@ async function confirmarModal2FA() {
     if (btn) btn.disabled = false;
   }
 }
-
-/* ===== Auditoría ===== */
 
 const ACCIONES_LEGIBLE = {
   login_ok: "Inicio de sesión",
@@ -1245,8 +1189,6 @@ async function cargarAuditoriaPanel() {
     tbody.innerHTML = `<tr><td colspan="6" class="cfg-aud-vacio">No se pudo cargar la auditoría.</td></tr>`;
   }
 }
-
-/* ===== Respaldos ===== */
 
 async function descargarBackup() {
   try {

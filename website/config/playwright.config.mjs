@@ -19,21 +19,12 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     env: {
       PORT: "3100",
-      // Access tokens de 3s: cada corrida ejercita la renovación automática
-      // de sesión (refresh) en todas las páginas que hacen peticiones.
       LC_JWT_EXPIRES: "3s",
-      // El refresh duplica peticiones (401 + reintento); amplía el límite para
-      // que la suite no choque con el límite general de producción (200/15min).
       LC_API_LIMIT: "2000",
       LC_ESCRITURA_LIMIT: "2000",
-      // La suite inicia sesión decenas de veces por corrida: ampliar el máximo
-      // de intentos de login (el límite real de producción es 10).
       LC_LOGIN_LIMIT: "200",
       LC_DB_DIR: path.join(os.tmpdir(), `lc-e2e-db-${Date.now()}`),
-      // La suite e2e usa las cuentas de ejemplo del proyecto.
       LC_SEED_DEMO: "1",
-      // El registro público solo admite los dominios declarados aquí; la suite
-      // se registra con correos @liceo.cl (y las cuentas quedan pendientes).
       LC_REGISTRO_DOMINIOS: "liceo.cl"
     }
   }

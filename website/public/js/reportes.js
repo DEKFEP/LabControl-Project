@@ -1,7 +1,5 @@
-/* Imports (ES modules) */
 import { AUTH, actualizarReporte, cargarReporte, cargarReportes, cargarUsuarios, crearReporte, eliminarReporte } from "./data.js";
 import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam, refrescarNotificaciones, renderSidebar, setDisplay, showToast } from "./app.js";
-
 
   await renderSidebar("reportes");
 
@@ -17,7 +15,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
   let repAbiertoId  = null;
   let repAbierto    = null;
 
-  /* Estado del modal (crear / editar) */
   let modoModal = "crear";
   let editandoId = null;
   let archivosTemporales = [];
@@ -30,10 +27,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     const destino = getQueryParam("id");
     if (destino && reportes.some((r) => r.id === destino)) abrirReporte(destino);
   }).catch(() => showToast("No se pudieron cargar los reportes.", "error"));
-
-  /* ======================================================
-     LISTA RESUMIDA DE REPORTES
-     ====================================================== */
 
   function renderRepGrid(reportes) {
     const grid = document.getElementById("rep-grid");
@@ -75,10 +68,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     });
   }
 
-  /* ======================================================
-     VISTA DETALLE (con más información)
-     ====================================================== */
-
   function puedeModificar(rep) {
     const sesion = AUTH.getSesion();
     return !!sesion && (sesion.rol === "admin" || rep.generadoPor === sesion.id);
@@ -86,8 +75,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
 
   async function abrirReporte(id) {
     if (!reportesCache.some((r) => r.id === id)) return;
-    // El listado ya no trae el base64 de los adjuntos (inflaba la respuesta):
-    // se pide el reporte completo, con sus adjuntos, recién al abrirlo.
     let rep;
     try {
       rep = await cargarReporte(id);
@@ -110,7 +97,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     document.getElementById("rep-autor").innerHTML =
       `<i data-lucide="user"></i> ${autor ? `${esc(autor.nombre)} ${esc(autor.apellido)}` : esc(rep.generadoPor)}`;
 
-    // Botones de acción: solo el creador o un administrador pueden editar/eliminar
     const acciones = document.getElementById("rep-acciones");
     const botones  = [`<button class="btn" data-acc="csv"><i data-lucide="file-down"></i> Exportar CSV</button>`, `<button class="btn" data-acc="imprimir"><i data-lucide="printer"></i> Imprimir</button>`];
     if (puedeModificar(rep)) {
@@ -138,8 +124,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     }
   }
 
-  // Defensa en profundidad: el servidor valida los adjuntos con el mismo allowlist,
-  // pero un dato manipulado no debe llegar nunca a `src`/`href` sin comprobarse.
   const DATA_URL_SEGURA = /^data:(image|application|text)\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=\r\n]*$/;
 
   function adjuntoSeguro(a) {
@@ -199,10 +183,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     document.getElementById("lightbox").style.display = "flex";
   }
 
-  /* ======================================================
-     ACCIONES: EDITAR / ELIMINAR
-     ====================================================== */
-
   async function recargarReportes() {
     try {
       reportesCache = await cargarReportes();
@@ -252,10 +232,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     }
   }
 
-  /* ======================================================
-     NAVEGACIÓN VISTA LISTA ↔ DETALLE
-     ====================================================== */
-
   document.getElementById("btn-volver-rep").addEventListener("click", () => {
     repAbiertoId = null;
     repAbierto   = null;
@@ -263,10 +239,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     document.getElementById("rep-grid").style.display      = "grid";
     setDisplay(".page-header", "flex");
   });
-
-  /* ======================================================
-     MODAL NUEVO / EDITAR REPORTE
-     ====================================================== */
 
   function abrirModalNuevo() {
     modoModal    = "crear";
@@ -292,7 +264,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
   document.getElementById("btn-cerrar-rep-modal").addEventListener("click", cerrarModalReporte);
   document.getElementById("btn-cancelar-rep").addEventListener("click", cerrarModalReporte);
 
-  // Aviso cuando el reporte es de tipo libre ("Otro")
   document.getElementById("nuevo-rep-tipo").addEventListener("change", actualizarHintOtro);
 
   function actualizarHintOtro() {
@@ -303,8 +274,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
   document.getElementById("modal-reporte").addEventListener("click", (e) => {
     if (e.target === document.getElementById("modal-reporte")) cerrarModalReporte();
   });
-
-  /* ---- Adjuntos del modal ---- */
 
   document.getElementById("nuevo-rep-archivos").addEventListener("change", (e) => agregarArchivos(e.target.files));
 
@@ -327,9 +296,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     });
   }
 
-  // Espejo de TIPOS_ADJUNTO del backend. Sin esta comprobación el navegador
-  // dejaba elegir .ppt/.xlsx/SVG y el servidor los descartaba en silencio: el
-  // usuario veía "Reporte generado" y el archivo no estaba.
   const TIPOS_ADJUNTO = new Set([
     "image/png", "image/jpeg", "image/gif", "image/webp",
     "application/pdf",
@@ -375,8 +341,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     quitarArchivoTemporal(Number(b.dataset.quitar));
   };
 
-  /* ---- Guardar (crear o editar) ---- */
-
   document.getElementById("btn-generar-rep").addEventListener("click", async () => {
     const tipo        = document.getElementById("nuevo-rep-tipo").value;
     const titulo      = document.getElementById("nuevo-rep-titulo").value.trim();
@@ -397,13 +361,10 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
           descripcion,
           fecha: fechaLocalISO(),
           generadoPor: sesion?.id ?? "desconocido",
-          // El contenido de los reportes calculados lo genera el backend a
-          // partir de las tablas reales; el cliente no envía cifras.
           adjuntos: archivosTemporales
         });
         showToast("Reporte generado correctamente.");
       } else {
-        // Al editar no se regeneran los datos ni la fecha original
         await actualizarReporte(editandoId, {
           tipo, titulo, descripcion,
           adjuntos: archivosTemporales,
@@ -424,12 +385,7 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     }
   });
 
-  /* ======================================================
-     CONTENIDO DEL REPORTE (gráficos y tablas)
-     ====================================================== */
-
   function buildReporteHTML(rep) {
-    // Reporte libre ("Otro"): sin gráficos ni tablas generadas por el sistema
     if (rep.tipo === "otro") return "";
     const datos = rep.datos && typeof rep.datos === "object" ? rep.datos : {};
 
@@ -501,7 +457,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     const ctx    = canvas.getContext("2d");
     const W      = canvas.width;
     const H      = canvas.height;
-    // Blindaje ante datos incompletos: cada barra usa un número finito o 0.
     const seguros = labels.map((_, i) => (Number.isFinite(Number(valores[i])) ? Number(valores[i]) : 0));
     const maxVal = Math.max(...seguros, 1);
     const pad    = 40;
@@ -538,10 +493,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
     });
   }
 
-  /* ======================================================
-     UTILIDADES
-     ====================================================== */
-
   function formatoBytes(n) {
     if (!n && n !== 0) return "";
     const unidades = ["B", "KB", "MB", "GB"];
@@ -556,9 +507,6 @@ import { abrirModal, cerrarModal, esc, fechaLocalISO, formatFecha, getQueryParam
 
   function escapeCSV(val) {
     let s = String(val ?? "");
-    // Neutraliza la inyección de fórmulas: si el valor empieza por =, +, - o @
-    // (o por tabulador/retorno), Excel y Sheets lo ejecutarían al abrir el CSV.
-    // Se antepone un apóstrofo y se fuerza el entrecomillado.
     if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }

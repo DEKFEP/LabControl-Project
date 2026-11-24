@@ -1,12 +1,3 @@
-/**
- * datos-demo.js
- * Datos de respaldo para cuando el sitio se publica SIN servidor propio
- * (por ejemplo, en GitHub Pages). El contenido replica la semilla de
- * backend/db.js, de modo que la versión demo se ve igual que la real.
- *
- * Solo se carga si data.js detecta que la API no está disponible.
- */
-
 (function () {
   const LABORATORIOS = [
     {
@@ -56,10 +47,6 @@
     }
   ];
 
-  // Los usuarios de demostración NO incluyen contraseña: publicar credenciales
-  // (aunque sean de prueba) en un archivo que descarga cualquier visitante es
-  // el hallazgo crítico que se corrige aquí. En modo demo el inicio de sesión
-  // valida que la cuenta exista, sin comprobar contraseña (data.js).
   const USUARIOS = [
     { id: "INSUCO", nombre: "Administrador", apellido: "Sistema", iniciales: "AD", email: "admin@liceo.cl", rol: "admin", area: "Administración", especialidad: "Gestión de sistemas y redes", nivelAcceso: "total", activo: true },
     { id: "prof_juan", nombre: "Juan", apellido: "Pérez", iniciales: "JP", email: "jperez@insuco.cl", rol: "programacion", area: "Programación", especialidad: "Desarrollo Web y Redes", nivelAcceso: "tecnico", activo: true },
@@ -109,7 +96,6 @@
     }
   ];
 
-  // Los reportes de ejemplo no traen archivos adjuntos
   for (const r of REPORTES) r.adjuntos = [];
 
   const CONFIG = {
@@ -121,7 +107,6 @@
     equipos: { habilitarControlRemoto: true, apagadoAutomatico: false, monitoreoTiempoReal: true, intervaloEncendido: 30 }
   };
 
-  // Genera los mismos equipos que crea db.js en la base de datos real
   const EQUIPOS = [];
   for (const l of LABORATORIOS) {
     for (let i = 1; i <= l.equipos; i++) {

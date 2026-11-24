@@ -1,7 +1,5 @@
-/* Imports (ES modules) */
 import { AUTH, actualizarUsuario, cargarAuditoria, cargarUsuarios, crearUsuario, eliminarUsuario, errorPassword } from "./data.js";
 import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam, initTabs, nivelLabel, renderSidebar, rolLabel, setDisplay, showToast } from "./app.js";
-
 
   await renderSidebar("usuarios");
   initTabs();
@@ -12,8 +10,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
     document.getElementById("btn-nuevo-usuario").style.display = "none";
   }
 
-  // Restricciones de visibilidad entre roles. La pestaña Actividad muestra
-  // datos reales de /api/auditoria, que solo el administrador puede consultar.
   function puedeVerSeccion(rolUsuario, seccion) {
     if (seccion === "actividad") return miRol === "admin";
     if (miRol === "admin") return true;
@@ -24,8 +20,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
   let usuariosCache = [];
   let detalleActualId = null;
 
-  // Al llegar desde una notificación (por ejemplo, "Nuevo profesor registrado")
-  // se abre directamente la ficha del usuario indicado en la URL.
   const idInicial = getQueryParam("id");
 
   cargarUsuarios().then((usuarios) => {
@@ -145,19 +139,15 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
 
     document.getElementById("det-nivel-badge").textContent = nivelLabel(u.nivelAcceso);
 
-    // Acciones admin
     const accionesEl = document.getElementById("det-acciones-admin");
     accionesEl.style.display = esAdmin ? "flex" : "none";
 
-    // El botón cambia según el estado: "Desactivar" para una cuenta activa y
-    // "Activar" para una que ya fue desactivada. No se puede eliminar la propia.
     const btnDesactivar = document.getElementById("btn-desactivar-usr");
     btnDesactivar.textContent = u.activo ? "Desactivar" : "Activar";
     btnDesactivar.className   = u.activo ? "btn btn--danger" : "btn";
     const btnEliminar = document.getElementById("btn-eliminar-usr");
     btnEliminar.style.display = (esAdmin && u.id !== AUTH.getSesion()?.id) ? "" : "none";
 
-    // Menú del nivel de acceso: solo el administrador lo otorga o lo cambia.
     const nivelControl = document.getElementById("det-nivel-control");
     if (nivelControl) {
       nivelControl.style.display = esAdmin ? "block" : "none";
@@ -165,7 +155,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
       if (esAdmin && selectNivel) selectNivel.value = u.nivelAcceso || "basico";
     }
 
-    // Ocultar pestañas restringidas según el rol del usuario en sesión
     const btnPermisos  = document.querySelector('.tab-btn[data-tab="det-permisos"]');
     const btnActividad = document.querySelector('.tab-btn[data-tab="det-actividad"]');
     const verPermisos  = puedeVerSeccion(u.rol, "permisos");
@@ -177,7 +166,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
       __activarTab(document.querySelector('.tab-btn[data-tab="det-info"]'), false);
     }
 
-    // Info
     document.getElementById("det-info-grid").innerHTML = `
       <div><dt>Nombre completo</dt><dd>${esc(u.nombre)} ${esc(u.apellido)}</dd></div>
       <div><dt>ID usuario</dt><dd>${esc(u.id)}</dd></div>
@@ -189,7 +177,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
       <div><dt>Estado</dt><dd>${u.activo ? "Activo" : "Inactivo"}</dd></div>
     `;
 
-    // Permisos
     const perms = getPermisosPorRol(u.rol, u.nivelAcceso);
     document.getElementById("det-permisos-list").innerHTML = `
       <div class="permisos-grid">
@@ -205,7 +192,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
       </div>
     `;
 
-    // Actividad reciente: datos reales de la auditoría (M-06).
     renderActividadReal(u);
   }
 
@@ -248,7 +234,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
 
   function getPermisosPorRol(rol, nivel) {
     const esAdm   = rol === "admin";
-    // El acceso técnico lo otorga el admin con el nivel de acceso, no el rol.
     const esTec   = esAdm || nivel === "tecnico" || nivel === "total";
     return [
       { nombre:"Ver laboratorios",              desc:"Estado y disponibilidad básica",                ok: true },
@@ -265,7 +250,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
 
   document.getElementById("btn-volver-usr").addEventListener("click", volverAlListado);
 
-  // Modal nuevo / editar usuario
   let usuarioEditandoId = null;
 
   function resetearModalUsuario(opciones = {}) {
@@ -313,7 +297,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
     abrirEdicionUsuario(u);
   });
 
-  // Otorgar o cambiar el nivel de acceso (solo administrador), con confirmación.
   document.getElementById("btn-otorgar-nivel").addEventListener("click", () => {
     const u = usuariosCache.find((x) => x.id === detalleActualId);
     if (!u) { showToast("No se encontró el usuario.", "error"); return; }
@@ -360,7 +343,6 @@ import { abrirModal, cerrarModal, __activarTab, esc, formatFecha, getQueryParam,
       .catch((err) => showToast(err.message || "No se pudo actualizar el usuario.", "error"));
   });
 
-  // Eliminar definitivamente una cuenta (solo administrador).
   document.getElementById("btn-eliminar-usr").addEventListener("click", () => {
     const u = usuariosCache.find((x) => x.id === detalleActualId);
     if (!u) return;

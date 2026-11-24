@@ -1,8 +1,6 @@
-/* Hoja de estilos con temas (el activo se aplica con <html data-theme>) */
 
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=ABeeZee:ital@0;1&display=swap');
 
-/* PALETAS POR TEMA */
 :root,
 [data-theme="claro"] {
   color-scheme: light;
@@ -161,7 +159,6 @@
   --mobile-nav-bg: #042f25;
 }
 
-/* Alias con nombres antiguos usados en HTML/JS */
 :root,
 [data-theme="claro"],
 [data-theme="oscuro"] {
@@ -181,7 +178,6 @@
   --primary-gradient: var(--grad-primary);
 }
 
-/* BASE */
 * { box-sizing: border-box; }
 
 html, body { margin: 0; padding: 0; }
@@ -227,13 +223,11 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   to   { opacity: 1; transform: none; }
 }
 
-/* LAYOUT PRINCIPAL */
 .app-layout {
   display: flex;
   min-height: 100vh;
 }
 
-/* Sidebar */
 .sidebar {
   width: 250px;
   flex-shrink: 0;
@@ -245,9 +239,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   top: 0;
   height: 100vh;
   border-right: 1px solid rgba(125, 180, 255, .12);
-  /* Apila el sidebar (y el panel de notificaciones) por encima del contenido,
-     pero por debajo de modales (100) y toasts (200). El contenido principal
-     conserva un contexto de apilamiento por la animación page-in. */
   z-index: 90;
 }
 
@@ -304,11 +295,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   stroke-width: 2;
 }
 
-/* Agrupa el bloque de usuario con la campana de notificaciones. En escritorio
-   no genera caja (`display: contents`): el usuario sigue al pie de la barra
-   lateral y la campana en su esquina. En el celular se convierte en la
-   cabecera del menú desplegable (ver @media max-width: 860px). */
-
 .sidebar__user {
   display: flex;
   align-items: center;
@@ -336,10 +322,7 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
 }
 .sidebar__user .name { font-size: .84rem; color: #fff; font-weight: 700; line-height: 1.25; }
 .sidebar__user .role { font-size: .71rem; opacity: .8; }
-/* El correo solo se muestra en el menú del celular. */
 .sidebar__user .email { display: none; }
-/* Columna de texto (nombre, rol y correo): puede encogerse para que el
-  ipsis se aplique y no empuje el botón de cerrar sesión. */
 .sidebar__user > div:not(.avatar) { min-width: 0; }
 
 .logout-btn {
@@ -355,7 +338,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
 }
 .logout-btn:hover { background: rgba(239, 68, 68, .2); color: #fda4af; }
 
-/* Contenido */
 .main-content {
   flex: 1;
   padding: 30px 34px 52px;
@@ -395,7 +377,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   color: var(--color-text-muted);
 }
 
-/* LOGIN */
 .login-body {
   min-height: 100vh;
   display: flex;
@@ -521,7 +502,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   background: var(--soft-primary);
 }
 
-/* Paso 2FA del login */
 .login-otp {
   text-align: center;
   padding: 4px 0 2px;
@@ -562,7 +542,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   color: var(--color-primary);
 }
 
-/* Enlaces bajo el botón de ingresar (recuperar / crear cuenta) */
 .login-links {
   display: flex;
   justify-content: center;
@@ -589,7 +568,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
 [data-theme="oscuro"] .login-link { color: #8fc3ff; }
 [data-theme="oscuro"] .login-link:hover { color: var(--color-primary); }
 
-/* Divisor "o continúa con" */
 .login-divider {
   display: flex;
   align-items: center;
@@ -607,7 +585,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   background: var(--color-border);
 }
 
-/* Botón social (Google) */
 .btn--social {
   width: 100%;
   display: inline-flex;
@@ -628,7 +605,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   background: var(--btn-hover-bg);
 }
 
-/* Avisos del login */
 .login-info {
   background: var(--soft-primary);
   border: 1px solid var(--warning-line);
@@ -649,7 +625,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   margin-bottom: 14px;
 }
 
-/* Vista de registro */
 .login-alt .login-title { margin-top: 8px; }
 .login-check {
   display: flex;
@@ -673,7 +648,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   margin: 4px 2px 0;
 }
 
-/* Formulario de registro: 2 columnas en escritorio, 1 en celular */
 #registro-form {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -692,7 +666,6 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
   #registro-form { grid-template-columns: 1fr; }
 }
 
-/* Cuerpo del modal de términos / privacidad */
 .terminos-cuerpo {
   max-height: 58vh;
   overflow-y: auto;
@@ -708,10 +681,8 @@ h1 + p { margin: 4px 0 0; color: var(--color-text-muted); font-size: .9rem; }
 .terminos-cuerpo p { margin: 0 0 10px; }
 .terminos-lead { color: var(--color-text-muted); }
 
-/* Tamaño de texto accesible (Configuración → Apariencia) */
 html.texto-grande { font-size: 112.5%; }
 
-/* COMPONENTES */
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -722,7 +693,6 @@ html.texto-grande { font-size: 112.5%; }
 }
 .card:hover { box-shadow: var(--shadow-md); }
 
-/* Botones */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -775,7 +745,6 @@ html.texto-grande { font-size: 112.5%; }
 
 .btn--sm { padding: 6px 12px; font-size: .78rem; border-radius: 6px; }
 
-/* Botón de ayuda (?) de Configuración */
 .cfg-acciones {
   position: relative;
   display: flex;
@@ -836,7 +805,6 @@ html.texto-grande { font-size: 112.5%; }
 .cfg-ayuda-menu button:hover { background: var(--surface-deep); }
 .cfg-ayuda-menu button svg.lucide { width: 16px; height: 16px; opacity: .85; }
 
-/* Contenido del modal de ayuda */
 #modal-ayuda .modal__body { max-height: 62vh; overflow-y: auto; }
 
 .ayuda-faq { display: flex; flex-direction: column; gap: 12px; }
@@ -857,7 +825,6 @@ html.texto-grande { font-size: 112.5%; }
 .ayuda-acerca { text-align: center; }
 .ayuda-acerca img { margin-bottom: 4px; }
 
-/* Acerca de: quiénes somos, encargados y contacto */
 .acerca-seccion {
   margin-top: 26px;
   padding-top: 22px;
@@ -881,8 +848,6 @@ html.texto-grande { font-size: 112.5%; }
 .acerca-texto p { margin: 0 0 11px; text-align: justify; }
 .acerca-texto p:last-child { margin-bottom: 0; }
 
-/* Las tarjetas solo se ponen en dos columnas cuando el modal es realmente ancho;
-   con una sola columna la descripción larga se lee mucho mejor. */
 .acerca-encargados { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); }
 
 .acerca-encargado {
@@ -964,7 +929,6 @@ html.texto-grande { font-size: 112.5%; }
 .acerca-contacto__valor { font-size: .84rem; line-height: 1.5; margin-top: 3px; word-break: break-word; }
 .acerca-contacto__valor a { color: var(--color-primary); font-weight: 700; }
 
-/* Formularios */
 .form-group { margin-bottom: 15px; flex: 1; min-width: 0; }
 
 .form-label {
@@ -998,7 +962,6 @@ html.texto-grande { font-size: 112.5%; }
 
 .form-row { display: flex; gap: 13px; flex-wrap: wrap; }
 
-/* Badges */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1036,7 +999,6 @@ html.texto-grande { font-size: 112.5%; }
   50%      { opacity: .45; transform: scale(.75); }
 }
 
-/* Stat cards */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
@@ -1092,7 +1054,6 @@ html.texto-grande { font-size: 112.5%; }
 .rep-card__icon.stat-card__icon--danger  { background: var(--soft-danger); }
 .rep-card__icon.stat-card__icon--warning { background: var(--soft-warning); }
 
-/* Tabs */
 .tabs {
   display: flex;
   gap: 2px;
@@ -1124,7 +1085,6 @@ html.texto-grande { font-size: 112.5%; }
 .tab-panel { display: none; padding: 20px; }
 .tab-panel.is-active { display: block; animation: fade-in .25s ease; }
 
-/* TABLAS */
 .table-wrap { overflow-x: auto; }
 
 table {
@@ -1157,7 +1117,6 @@ tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background .15s; }
 tbody tr:hover { background: var(--row-hover); }
 
-/* Info grid (dl) */
 .info-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1227,7 +1186,6 @@ tbody tr:hover { background: var(--row-hover); }
   flex-shrink: 0;
 }
 
-/* TARJETAS DE LABORATORIO */
 .lab-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
@@ -1300,7 +1258,6 @@ tbody tr:hover { background: var(--row-hover); }
   color: var(--color-primary);
 }
 
-/* Estado en tiempo real */
 .status-row {
   display: flex;
   align-items: center;
@@ -1346,7 +1303,6 @@ tbody tr:hover { background: var(--row-hover); }
   box-shadow: 0 0 8px currentColor;
 }
 
-/* Donut */
 .donut-wrap {
   display: flex;
   gap: 26px;
@@ -1371,7 +1327,6 @@ tbody tr:hover { background: var(--row-hover); }
   box-shadow: 0 0 6px rgba(15, 27, 51, .2);
 }
 
-/* USUARIOS */
 .usr-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
@@ -1462,7 +1417,6 @@ tbody tr:hover { background: var(--row-hover); }
 .actividad-item__texto { font-size: .87rem; font-weight: 700; }
 .actividad-item__fecha { font-size: .74rem; color: var(--color-text-muted); }
 
-/* REPORTES */
 .rep-card__arrow {
   color: var(--color-primary);
   font-size: 1.15rem;
@@ -1472,7 +1426,6 @@ tbody tr:hover { background: var(--row-hover); }
 }
 .rep-card:hover .rep-card__arrow { transform: translateX(4px); }
 
-/* MODALES */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1496,11 +1449,6 @@ tbody tr:hover { background: var(--row-hover); }
 }
 .modal--lg { max-width: 580px; }
 
-/* Acerca de tiene tres secciones largas (presentación, dos encargados y
-   contacto). En escritorio se ensancha para que el texto mida lo bastante y las
-   tarjetas de los encargados quepan en dos columnas. En el celular manda el ancho
-   del overlay (padding de 20px), asi que esto solo agranda el escritorio.
-   Ojo: `#modal-ayuda` es el overlay, el cuadro es su hijo `.modal`. */
 #modal-ayuda[data-opcion="acerca"] .modal { max-width: 820px; }
 
 @keyframes modal-in {
@@ -1541,7 +1489,6 @@ tbody tr:hover { background: var(--row-hover); }
   background: var(--modal-footer-bg);
 }
 
-/* TOASTS */
 #toast-container {
   position: fixed;
   bottom: 24px;
@@ -1569,7 +1516,6 @@ tbody tr:hover { background: var(--row-hover); }
 .toast--error { border-left-color: var(--color-danger); }
 .toast--show  { opacity: 1; transform: none; }
 
-/* CONFIGURACIÓN */
 .cfg-layout {
   display: flex;
   gap: 22px;
@@ -1655,7 +1601,6 @@ tbody tr:hover { background: var(--row-hover); }
 .cfg-sys-card__label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-muted); font-weight: 800; }
 .cfg-sys-card__value { font-weight: 800; font-size: 1.08rem; margin-top: 4px; }
 
-/* Auditoría */
 .cfg-aud-filtros {
   display: grid;
   grid-template-columns: 1fr 150px 150px;
@@ -1704,7 +1649,6 @@ tbody tr:hover { background: var(--row-hover); }
   padding: 24px !important;
 }
 
-/* Respaldos */
 .cfg-backup-acciones {
   display: flex;
   gap: 10px;
@@ -1713,7 +1657,6 @@ tbody tr:hover { background: var(--row-hover); }
 }
 .cfg-backup-acciones label.btn { cursor: pointer; }
 
-/* Modal pequeño (2FA) */
 .modal.modal--sm { max-width: 400px; }
 
 .tema-grid {
@@ -1788,7 +1731,6 @@ tbody tr:hover { background: var(--row-hover); }
 }
 .toggle--on .toggle__knob { left: 23px; }
 
-/* EQUIPOS */
 .tech-cell { font-family: Consolas, monospace; font-size: .8rem; }
 
 .locked-cell {
@@ -1819,7 +1761,6 @@ tbody tr:hover { background: var(--row-hover); }
 .remote-log div { padding: 2.5px 0; }
 .remote-log .log-time { color: #54749e; margin-right: 9px; }
 
-/* RESPONSIVE */
 @media (max-width: 860px) {
   .app-layout { flex-direction: column; }
 
@@ -1841,7 +1782,6 @@ tbody tr:hover { background: var(--row-hover); }
   .avatar { width: 32px; height: 32px; font-size: .72rem; }
 }
 
-/* IMPRESIÓN (reportes) */
 @media print {
   .sidebar,
   .page-header button,
@@ -1857,15 +1797,12 @@ tbody tr:hover { background: var(--row-hover); }
   td { border-color: #ddd; }
 }
 
-/* ICONOS LUCIDE (tamaños por contexto) */
 svg.lucide {
   width: 20px;
   height: 20px;
   stroke-width: 2;
   flex-shrink: 0;
   vertical-align: middle;
-  /* Los iconos son decorativos: nunca interceptan clics,
-     así el botón completo responde en toda su superficie */
   pointer-events: none;
 }
 
@@ -1914,7 +1851,6 @@ svg.lucide {
   color: var(--color-text-muted);
 }
 .access-notice > span svg.lucide { width: 22px; height: 22px; }
-/* v1.7 · REPORTES RESUMIDOS + ADJUNTOS */
 .rep-grid {
   display: flex;
   flex-direction: column;
@@ -1978,7 +1914,6 @@ svg.lucide {
   color: var(--color-text-muted);
 }
 
-/* Adjuntos en el detalle del reporte */
 .adj-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -2047,7 +1982,6 @@ a.adj-file:hover { border-color: var(--color-primary); color: var(--color-primar
 }
 .adj-file__quitar:hover { color: var(--color-danger); background: var(--soft-danger); }
 
-/* Zona para soltar/seleccionar archivos del modal */
 .dropzone {
   display: flex;
   flex-direction: column;
@@ -2071,7 +2005,6 @@ a.adj-file:hover { border-color: var(--color-primary); color: var(--color-primar
 
 textarea.form-input { resize: vertical; min-height: 90px; }
 
-/* v1.7 · NOTIFICACIONES (campana en la barra lateral) */
 .sidebar { overflow: visible; }
 
 .notif-wrap {
@@ -2241,8 +2174,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
 }
 .notif-vacia svg.lucide { width: 26px; height: 26px; margin-bottom: 8px; opacity: .6; }
 
-/* ACCESIBILIDAD */
-/* Skip-nav: enlace para saltar al contenido */
 .skip-nav {
   position: absolute;
   left: -9999px;
@@ -2263,7 +2194,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   box-shadow: 0 0 0 3px #000, 0 4px 14px rgba(0, 0, 0, .4);
 }
 
-/* Toggles accesibles (role="switch"): estado y foco por teclado */
 .toggle[role="switch"] {
   display: inline-flex;
   border: none;
@@ -2276,7 +2206,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
 }
 .toggle[role="switch"] .toggle__knob { pointer-events: none; }
 
-/* Contraste del código en sugerencias de login (claro y oscuro) */
 .login-hint { color: var(--color-text); }
 [data-theme="oscuro"] .login-hint code {
   background: #1f2937;
@@ -2284,7 +2213,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   color: #7dd3fc;
 }
 
-/* Calendario semanal de disponibilidad */
 .semana-nav {
   display: flex;
   align-items: center;
@@ -2341,11 +2269,9 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   background: var(--soft-danger);
   border-color: var(--danger);
 }
-/* Reserva de otro usuario: se muestra, pero no se ofrece para cancelar. */
 .semana-chip--ajeno { cursor: default; }
 .semana-chip--ajeno:hover { transform: none; box-shadow: none; }
 
-/* prefers-reduced-motion: usuario pide menos movimiento */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2357,7 +2283,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   }
 }
 
-/* La campana sigue a las secciones, separada por una línea discreta. */
 @media (min-width: 861px) {
   .notif-wrap { position: relative; top: auto; right: auto; margin: 9px 0 0; padding-top: 12px; border-top: 1px solid rgba(0, 0, 0, .55); }
   .notif-btn { width: 100%; height: 42px; gap: 11px; border-radius: 6px; justify-content: flex-start; padding: 0 13px; font: inherit; font-size: .92rem; font-weight: 600; }
@@ -2366,7 +2291,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   .notif-panel { position: fixed; top: 72px; bottom: auto; left: 72px; max-height: min(420px, calc(100dvh - 88px)); }
 }
 
-/* Perfil y navegación compacta en escritorio. En móvil se conservan los nombres. */
 .user-avatar-btn {
   display: flex;
   align-items: center;
@@ -2451,7 +2375,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   [data-tooltip]:hover::after, [data-tooltip]:focus-visible::after { opacity: 1; }
 }
 
-/* Cabecera de LabControl y superficies planas con la paleta verde. */
 :root, [data-theme="claro"] {
   --color-dark: #064E3B;
   --color-link: #064E3B;
@@ -2472,7 +2395,6 @@ textarea.form-input { resize: vertical; min-height: 90px; }
   z-index: 80;
 }
 .app-brand a { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text); font-family: "Outfit", "Segoe UI", sans-serif; font-size: 1.2rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.2; text-decoration: none; }
-/* Compensa el margen transparente del archivo original sin deformar el símbolo. */
 .app-brand__icon { display: block; width: 32px; height: 32px; flex-shrink: 0; object-fit: contain; transform: scale(1.7) translate(-1%, -2%); }
 .app-layout { padding-top: 56px; }
 .sidebar { top: 56px; height: calc(100dvh - 56px); border-color: var(--color-border); }
@@ -2496,7 +2418,6 @@ a { color: var(--color-link); }
   .app-brand { padding: 0 16px; }
   .app-brand__icon { width: 28px; height: 28px; }
 }
-/* En celular las secciones quedan siempre visibles en la barra inferior. */
 .sidebar-user-label { display: none; }
 .cfg-mobile-action { display: none; }
 @media (max-width: 860px) {

@@ -1,13 +1,9 @@
-/* app.js — funciones compartidas por todas las páginas. */
-
 import {
   AUTH, ESTADOS,
   cargarAgenda, cargarConfig, cargarNotificaciones, cargarSolicitudEspecialidad,
   marcarNotificacionLeida, marcarTodasNotificaciones, obtenerUsuarioPorId,
   resolverSolicitudEspecialidad
 } from "./data.js";
-
-/* Navegación (según rol) */
 
 const NAV_ITEMS_ALL = [
   { href: "index",          label: "Inicio",         icon: "layout-dashboard", roles: ["admin","programacion","otro_area"] },
@@ -18,14 +14,11 @@ const NAV_ITEMS_ALL = [
 
 let __iconsObserver = null;
 
-/* El mismo orden de secciones se usa en la sidebar de PC y en la barra
-   inferior del celular. El corte es el mismo que usa CSS (860px). */
 const MQ_MOVIL = window.matchMedia("(max-width: 860px)");
 
 export function actualizarIconosLucide() {
   if (!window.lucide || typeof window.lucide.createIcons !== "function") return;
   try {
-    // quito el atributo para que lucide no reconvierta los mismos iconos en cada pasada
     document.querySelectorAll("svg[data-lucide]").forEach((svg) =>
       svg.removeAttribute("data-lucide")
     );
@@ -42,8 +35,6 @@ export function actualizarIconosLucide() {
   } catch (e) {}
 }
 
-// El perfil usa los datos de sesión y la foto que esta cuenta elige en este
-// navegador. No cambia el contrato de la API ni guarda tokens en localStorage.
 function pintarUsuario(sesion) {
   const userEl = document.querySelector(".sidebar__user");
   const sidebar = document.querySelector(".sidebar");
@@ -170,8 +161,6 @@ async function guardarFotoPerfil(e) {
   }
 }
 
-// La sesión guarda el correo; si viene de una versión anterior que no lo
-// guardaba, se pide una vez al servidor y se conserva para el resto de páginas.
 async function completarCorreoSesion(sesion) {
   if (!sesion || sesion.email) return;
   try {
@@ -179,8 +168,6 @@ async function completarCorreoSesion(sesion) {
     if (!usuario?.email) return;
     const actual = AUTH.getSesion();
     if (actual) {
-      // Se descartan tokens heredados de versiones anteriores que los guardaban
-      // en localStorage: ahora la sesión vive en cookies HttpOnly.
       const { token, refreshToken, ...limpia } = actual;
       void token; void refreshToken;
       localStorage.setItem("lc_sesion", JSON.stringify({ ...limpia, email: usuario.email }));
@@ -189,8 +176,6 @@ async function completarCorreoSesion(sesion) {
   } catch {}
 }
 
-// Campana junto a las secciones en PC y en la cabecera en celular.
-// El perfil permanece al pie de la sidebar o a la derecha de la barra inferior.
 function ubicarBloqueUsuario() {
   const sidebar = document.querySelector(".sidebar");
   const nav = document.getElementById("sidebar-nav");
@@ -218,7 +203,6 @@ function ubicarBloqueUsuario() {
 
 MQ_MOVIL.addEventListener("change", () => { cerrarPerfil(); cerrarNotificaciones(); ubicarBloqueUsuario(); });
 
-// Cierra la tarjeta de notificaciones al pulsar fuera o cambiar de tamaño.
 function cerrarNotificaciones() {
   const panel = document.querySelector(".notif-panel");
   const btn = document.querySelector(".notif-btn");
@@ -226,9 +210,6 @@ function cerrarNotificaciones() {
   if (btn) btn.setAttribute("aria-expanded", "false");
 }
 
-// Arma el sidebar; si la página exige login y no hay sesión, redirige.
-// El rol se verifica contra la API (cookie HttpOnly) antes de pintar menús y
-// botones: el localStorage es solo una caché, no una autoridad (B-08).
 export async function renderSidebar(activeHref, requireAuth = true) {
   const sesion = await AUTH.sesionVerificada();
 
@@ -264,16 +245,10 @@ export async function renderSidebar(activeHref, requireAuth = true) {
   return sesion;
 }
 
-/* Notificaciones */
-
 let __notifsCache = [];
 let __notifsVistas = null;
 let __recordatoriosUltima = 0;
 
-// Sondeo de notificaciones. Se detiene con la pestaña en segundo plano (no tiene
-// sentido pedir datos que nadie ve ni gastar cuota de peticiones) y se reanuda,
-// con una actualización inmediata, al volver a ella. Si un sondeo falla (red o
-// 429), el siguiente se espacia en vez de insistir cada 30 s.
 const POLL_NOTIF_MS = 30000;
 const POLL_NOTIF_MAX_MS = 5 * 60 * 1000;
 let __notifsTimer = null;
@@ -283,7 +258,7 @@ let __notifsEscuchasListas = false;
 function programarSondeo() {
   if (__notifsTimer) clearTimeout(__notifsTimer);
   __notifsTimer = null;
-  if (document.hidden) return; // en segundo plano no se sondea
+  if (document.hidden) return;
   __notifsTimer = setTimeout(async () => {
     const ok = await refrescarNotificaciones();
     __notifsDelay = ok ? POLL_NOTIF_MS : Math.min(__notifsDelay * 2, POLL_NOTIF_MAX_MS);
@@ -369,7 +344,6 @@ function inicializarNotificaciones() {
   programarSondeo();
   if (!__notifsEscuchasListas) {
     __notifsEscuchasListas = true;
-    // Al volver a la pestaña: actualizar de inmediato y reanudar el sondeo.
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
         if (__notifsTimer) { clearTimeout(__notifsTimer); __notifsTimer = null; }
@@ -378,14 +352,11 @@ function inicializarNotificaciones() {
         refrescarNotificaciones().finally(programarSondeo);
       }
     });
-    // Al descargar la página, soltar el temporizador.
     window.addEventListener("pagehide", () => {
       if (__notifsTimer) { clearTimeout(__notifsTimer); __notifsTimer = null; }
     });
   }
 }
-
-/* Notificaciones del sistema */
 
 const NOTIF_ICONO = "img/labcontrol-icon.png";
 
@@ -475,7 +446,6 @@ export async function refrescarNotificaciones() {
     if (panel && panel.style.display !== "none") renderListaNotificaciones();
     return true;
   } catch {
-    // Se propaga el fallo al sondeo para que espacie los intentos.
     return false;
   }
 }
@@ -576,8 +546,6 @@ function renderListaNotificaciones() {
   });
 }
 
-/* Modal de revisión de una solicitud de cambio de especialidad (admin) */
-
 async function mostrarModalSolicitud(id) {
   let sol = null;
   try {
@@ -659,8 +627,6 @@ async function mostrarModalSolicitud(id) {
   actualizarIconosLucide();
 }
 
-/* Tarjetas de resumen */
-
 export function renderStatCards(labs, containerId) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -713,8 +679,6 @@ export function renderStatCards(labs, containerId) {
   `;
 }
 
-/* Estado en tiempo real */
-
 export function renderStatusList(labs, containerId) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -738,8 +702,6 @@ export function renderStatusList(labs, containerId) {
     `;
   }).join("");
 }
-
-/* Donut de distribución de equipos */
 
 export function renderDonut(labs, containerId) {
   const el = document.getElementById(containerId);
@@ -778,8 +740,6 @@ export function renderDonut(labs, containerId) {
   `;
 }
 
-/* Cuadrícula de laboratorios */
-
 export function renderLabGrid(labs, containerId, { linkTo = "laboratorios" } = {}) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -806,15 +766,10 @@ export function renderLabGrid(labs, containerId, { linkTo = "laboratorios" } = {
   if (window.lucide) window.lucide.createIcons();
 }
 
-/* Utilidades */
-
 export function getQueryParam(name) {
   return new URLSearchParams(window.location.search).get(name);
 }
 
-// Solo acepta AAAA-MM-DD. Aunque el backend ya valida el formato, cualquier valor
-// con otra forma se interpolaba tal cual en `innerHTML` (por ejemplo en
-// reportes.js), lo que abría XSS almacenado a través de una fecha manipulada.
 export function formatFecha(fechaStr) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(fechaStr ?? ""));
   if (!m) return "—";
@@ -826,13 +781,10 @@ export function formatFecha(fechaStr) {
   return `${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${anio}`;
 }
 
-// Muestra u oculta un elemento sin lanzar si el selector no existe (B-01).
 export function setDisplay(selector, display) {
   document.querySelector(selector)?.style.setProperty("display", display);
 }
 
-// Fecha en zona horaria LOCAL (AAAA-MM-DD). `toISOString()` devuelve UTC: en Chile
-// después de las 21:00 el día local ya es el siguiente.
 export function fechaLocalISO(d = new Date()) {
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
@@ -867,9 +819,6 @@ export function showToast(mensaje, tipo = "success") {
   }, 3200);
 }
 
-// Escape para interpolar en HTML. Cubre también las comillas porque la salida
-// se usa dentro de atributos con comillas dobles (p. ej. title="${esc(...)}"):
-// sin ellas, un valor con `"` cierra el atributo y permite XSS almacenado.
 export function esc(str) {
   if (str === null || str === undefined) return "";
   return String(str)
@@ -952,8 +901,6 @@ export function initTabs(container = document) {
   });
 }
 
-/* Accesibilidad: modales y toggles por teclado */
-
 export function obtenerFocusables(overlay) {
   const selector = [
     "a[href]",
@@ -971,7 +918,6 @@ export function cerrarModal(overlay, ultimoFoco) {
   if (ultimoFoco && typeof ultimoFoco.focus === "function") ultimoFoco.focus();
 }
 
-// Abre el modal, enfoca el primer control, atrapa Tab y cierra con Escape.
 export function abrirModal(overlayId, closeSelector = ".modal__close") {
   const overlay = document.getElementById(overlayId);
   if (!overlay) return;

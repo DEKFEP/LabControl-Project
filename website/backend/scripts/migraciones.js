@@ -1,26 +1,3 @@
-/* migraciones.js — herramienta de esquema de la base de datos.
- *
- *   node scripts/migraciones.js estado
- *       Muestra qué migraciones constan como aplicadas y cuáles faltan.
- *
- *   node scripts/migraciones.js rollback <objetivo> [--forzar]
- *       Deshace las migraciones aplicadas por encima de <objetivo> (0 = todas).
- *       Antes de tocar nada hace una copia de seguridad .prev-de-rollback de la
- *       base, y se detiene en la primera migración irreversible informando de
- *       cuál es, en lugar de dejar el esquema a medias.
- *
- *   node scripts/migraciones.js semillar
- *       Vuelve a aplicar la semilla de datos de ejemplo. Es idempotente: solo
- *       completa lo que falta, nunca pisa lo que ya existe.
- *
- *   node scripts/migraciones.js podar
- *       Recorta las tablas que crecen sin límite (auditoría, notificaciones,
- *       sesiones, solicitudes y enlaces de reseteo).
- *
- * Las migraciones pendientes se aplican solas al arrancar el servidor; este
- * script existe para poder inspeccionarlas y deshacerlas.
- */
-
 import fs from "node:fs";
 import path from "node:path";
 import { db, DB_PATH, DB_DIR, estadoMigraciones, revertirMigraciones, aplicarSemilla, podarTablas, MIGRACIONES } from "../db.js";
@@ -31,7 +8,7 @@ const posicionales = resto.filter((a) => !a.startsWith("--"));
 
 function salir(mensaje, codigo = 0) {
   if (mensaje) console.log(mensaje);
-  try { db.close(); } catch { /* ya cerrada */ }
+  try { db.close(); } catch {}
   process.exit(codigo);
 }
 
@@ -69,8 +46,6 @@ switch (comando) {
     }
     const forzar = banderas.has("--forzar");
 
-    // Copia de seguridad previa: revertir migraciones puede eliminar tablas.
-    // Con journal DELETE (sin WAL) el archivo principal ya está consistente.
     const respaldo = path.join(DB_DIR, "labcontrol.db.prev-de-rollback");
     fs.copyFileSync(DB_PATH, respaldo);
     console.log(`\n  Copia de seguridad previa: ${respaldo}`);

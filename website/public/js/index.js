@@ -1,7 +1,5 @@
-/* Imports (ES modules) */
 import { cargarLaboratorios } from "./data.js";
 import { esc, renderLabGrid, renderSidebar, renderStatCards, showToast } from "./app.js";
-
 
   const sesion = await renderSidebar("index");
 
@@ -20,7 +18,6 @@ import { esc, renderLabGrid, renderSidebar, renderStatCards, showToast } from ".
     renderLabGrid(labs, "labs-home", { linkTo: "laboratorios" });
   }).catch(() => showToast("No se pudieron cargar los laboratorios.", "error"));
 
-  // Lightbox de imágenes de laboratorios
   const lightbox = document.getElementById("lightbox-lab");
   const lightboxImg = document.getElementById("lightbox-lab-img");
   const lightboxCounter = document.getElementById("lightbox-lab-counter");

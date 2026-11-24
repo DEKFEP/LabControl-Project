@@ -38,9 +38,6 @@ export default [
     }
   },
   {
-    // Frontend en ES modules (import/export entre data.js, app.js y las
-    // páginas). no-undef detecta referencias sin import. service-worker.js queda
-    // en la raíz de public/ y los módulos en public/js/.
     files: ["website/public/*.js", "website/public/js/**/*.js"],
     languageOptions: {
       sourceType: "module",

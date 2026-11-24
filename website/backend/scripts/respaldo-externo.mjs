@@ -1,23 +1,3 @@
-/* respaldo-externo.mjs — instantánea consistente + copia fuera del servidor.
- *
- *   node scripts/respaldo-externo.mjs
- *
- * Produce una copia con `VACUUM INTO` (no lee el archivo vivo), comprueba su
- * integridad y la deja en LC_BACKUP_DIR. Si hay un destino externo configurado,
- * la replica para que la pérdida del volumen no se lleve la única copia:
- *
- *   LC_BACKUP_COPIAR_A     carpeta de otro disco/NAS/USB montado.
- *   LC_BACKUP_S3_URI       destino S3/R2, p. ej. s3://labcontrol-backups/labcontrol/
- *   LC_BACKUP_S3_ENDPOINT  endpoint de R2 si no se usa AWS.
- *   LC_BACKUP_S3_REGION    región (para R2: auto).
- *
- * El servidor puede programarlo solo con LC_BACKUP_AUTO=1; en ese caso corre
- * una vez al día a la hora local indicada (LC_BACKUP_HORA, por defecto 02:15)
- * y recupera el respaldo si el proceso estuvo caído en ese momento. Nunca
- * imprime credenciales; el aviso final recuerda si la copia quedó solo en el
- * mismo volumen que la base.
- */
-
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -31,7 +11,6 @@ export const DB_DIR = process.env.LC_DB_DIR
   ? path.resolve(process.env.LC_DB_DIR)
   : path.join(__dirname, "..", "database");
 
-// Número de entorno con valor por defecto y mínimo razonable.
 function numeroEnv(nombre, porDefecto, minimo = 1, env = process.env) {
   const n = Number(env[nombre]);
   return Number.isFinite(n) && n >= minimo ? n : porDefecto;
@@ -48,9 +27,6 @@ function directorioRespaldo(env = process.env) {
     : path.join(path.dirname(rutaBase(env)), "backups");
 }
 
-// Crea una instantánea consistente. `VACUUM INTO` copia dentro de una única
-// transacción de lectura, así que la copia no puede quedar a medias aunque el
-// servidor esté escribiendo en ese momento.
 export function crearInstantanea(rutaDb, dirSalida) {
   if (!fs.existsSync(rutaDb)) {
     throw new Error(`No existe la base de datos: ${rutaDb}`);
@@ -74,7 +50,6 @@ export function crearInstantanea(rutaDb, dirSalida) {
   return destino;
 }
 
-// Valida que la copia se pueda abrir y que SQLite la considere íntegra.
 export function verificarIntegridad(ruta) {
   const db = new DatabaseSync(ruta);
   try {
@@ -89,9 +64,6 @@ export function verificarIntegridad(ruta) {
   }
 }
 
-// Retención: conserva siempre las últimas `conservar` copias y, además, las
-// que tengan menos de `dias`. Solo borra archivos con el nombre que genera
-// este script (nunca bases ni temporales ajenos).
 export function podarRespaldos(dir, { dias = 30, conservar = 7, ahora = Date.now() } = {}) {
   if (!fs.existsSync(dir)) return [];
   const limite = ahora - dias * 24 * 60 * 60 * 1000;
@@ -113,7 +85,6 @@ export function podarRespaldos(dir, { dias = 30, conservar = 7, ahora = Date.now
   return eliminados;
 }
 
-// Copia a otra ruta montada (USB, NAS, segundo disco) y verifica la copia.
 export function copiarFuera(ruta, destinoDir) {
   if (!destinoDir) return null;
   fs.mkdirSync(destinoDir, { recursive: true });
@@ -129,9 +100,6 @@ function partirS3(uri) {
   return { bucket: m[1], prefijo: m[2] };
 }
 
-// Sube con el SDK de AWS, que también sirve para R2 y otros S3 compatibles. Se
-// usa el SDK (no la CLI) para que el respaldo programado funcione en Railway
-// sin instalar awscli en la imagen.
 export async function subirAS3(ruta, uri, {
   endpoint = process.env.LC_BACKUP_S3_ENDPOINT,
   region = process.env.LC_BACKUP_S3_REGION,
@@ -162,8 +130,6 @@ export async function subirAS3(ruta, uri, {
   return destino;
 }
 
-// Ejecuta un respaldo completo. Devuelve las rutas generadas o lanza el error
-// para que el llamador decida (CLI: código 1; programador: registrar y seguir).
 export async function ejecutarRespaldo({ env = process.env, logger = console } = {}) {
   const dirSalida = directorioRespaldo(env);
   const dias = numeroEnv("LC_BACKUP_RETENCION_DIAS", 30, 1, env);
@@ -198,7 +164,6 @@ export async function ejecutarRespaldo({ env = process.env, logger = console } =
   return { copia, externa, subida, eliminados };
 }
 
-// Fecha y hora en una zona IANA, sin depender de la zona del contenedor.
 export function horaEnZona(fecha, zona = "America/Santiago") {
   const partes = new Intl.DateTimeFormat("en-CA", {
     timeZone: zona,
@@ -213,9 +178,6 @@ export function horaEnZona(fecha, zona = "America/Santiago") {
   return { fecha: `${v.year}-${v.month}-${v.day}`, hora: `${v.hour}:${v.minute}` };
 }
 
-// ¿Toca respaldar? Se dispara al pasar la hora objetivo y no se repite el
-// mismo día. Si el proceso arranca después de la hora, recupera la copia
-// perdida en la primera revisión.
 export function debeEjecutarRespaldo(ahora, ultimaFecha, {
   hora = "02:15",
   zona = "America/Santiago"
@@ -259,9 +221,6 @@ function guardarUltimoIntento(dir, fecha) {
   fs.writeFileSync(archivoIntento(dir), `${fecha}\n`, "utf8");
 }
 
-// Programa el respaldo dentro del propio servidor. Solo se activa si hay un
-// destino externo y LC_BACKUP_AUTO=1; así un despliegue de desarrollo no
-// empieza a generar copias sin querer.
 export function iniciarRespaldoProgramado({
   env = process.env,
   logger = console,
@@ -291,8 +250,6 @@ export function iniciarRespaldoProgramado({
 
       const local = horaEnZona(ahora, zona);
       fechaIntento = local.fecha;
-      // Un fallo se registra para no repetir la subida cada 5 minutos durante
-      // todo el día; el siguiente intento será al día siguiente o manual.
       if (leerUltimoIntento(dir) === local.fecha) return;
 
       logger.log(`Respaldo programado (${local.fecha} ${local.hora} ${zona})...`);
@@ -314,8 +271,6 @@ export function iniciarRespaldoProgramado({
 
   const temporizador = setInterval(revisar, intervaloMs);
   temporizador.unref?.();
-  // Revisión inmediata (fuera del arranque): recupera el respaldo si el proceso
-  // estuvo caído a la hora objetivo. La marca evita repetirlo el mismo día.
   const inicial = setImmediate(revisar);
   inicial.unref?.();
   return temporizador;

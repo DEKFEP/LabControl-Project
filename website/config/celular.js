@@ -6,8 +6,6 @@ const net = require("net");
 const PUERTO = process.env.PORT || 3000;
 const RUTA_INICIO = "/login";
 
-// IP local para la LAN
-
 function prioridadIp(ip) {
   if (/^192\.168\./.test(ip)) return 3;
   if (/^10\./.test(ip)) return 2;
@@ -28,35 +26,27 @@ function ipsLocales() {
       }
     }
   }
-  // La más probable primero (rango típico de router doméstico/liceo).
   resultado.sort((a, b) => prioridadIp(b.direccion) - prioridadIp(a.direccion));
   return resultado;
 }
 
-// Código QR sin dependencias (modo byte, niveles L/M, versiones 1–10)
-
-// Palabras de corrección de errores por bloque (nivel L y M).
 const ECC_L = [-1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18];
 const ECC_M = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];
-// Cantidad de bloques Reed-Solomon por versión.
 const BLOQUES_L = [-1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4];
 const BLOQUES_M = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];
-// Total de codewords (datos + ECC) por versión.
 const TOTAL_CODEWORDS = [0, 26, 44, 70, 100, 134, 172, 196, 242, 292, 346];
-// Posiciones de los patrones de alineamiento, indexadas por versión
-// (la 1 no tiene; la coordenada grande siempre es tamaño - 7).
 const ALINEAMIENTO = [
-  [], // v1
-  [], // v1 (índice = versión)
-  [6, 18], // v2
-  [6, 22], // v3
-  [6, 26], // v4
-  [6, 30], // v5
-  [6, 34], // v6
-  [6, 22, 38], // v7
-  [6, 24, 42], // v8
-  [6, 26, 46], // v9
-  [6, 28, 50], // v10
+  [],
+  [],
+  [6, 18],
+  [6, 22],
+  [6, 26],
+  [6, 30],
+  [6, 34],
+  [6, 22, 38],
+  [6, 24, 42],
+  [6, 26, 46],
+  [6, 28, 50],
 ];
 
 function multiplicarRS(x, y) {
@@ -108,7 +98,7 @@ function entrelazar(datos, version) {
     const parte = datos.slice(k, k + largoDatos);
     k += largoDatos;
     const bloque = parte.slice();
-    if (i < numCortos) bloque.push(0); // relleno temporal de bloques cortos
+    if (i < numCortos) bloque.push(0);
     bloques.push({ cw: bloque.concat(restoRS(parte, div)), corto: i < numCortos });
   }
 
@@ -127,8 +117,6 @@ function matrizQR(texto, nivel, forzarMascara) {
 
   const datos = Buffer.from(texto, "utf8");
 
-  // Versión más chica que alcance (los bits de modo + contador + datos).
-  // La capacidad de datos es el total de codewords menos los de corrección.
   let version = 0;
   for (let v = 1; v <= 10; v++) {
     const ccBits = v < 10 ? 8 : 16;
@@ -143,12 +131,11 @@ function matrizQR(texto, nivel, forzarMascara) {
   const capacidadBits =
     (TOTAL_CODEWORDS[version] - ECL[version] * BLOQUES[version]) * 8;
 
-  // Flujo de bits: modo byte + largo + datos + terminador + relleno.
   const bits = [];
   const pushBits = (valor, largo) => {
     for (let i = largo - 1; i >= 0; i--) bits.push((valor >>> i) & 1);
   };
-  pushBits(4, 4); // indicador de modo "byte"
+  pushBits(4, 4);
   pushBits(datos.length, ccBits);
   for (const b of datos) pushBits(b, 8);
   pushBits(0, Math.min(4, capacidadBits - bits.length));
@@ -194,7 +181,7 @@ function matrizQR(texto, nivel, forzarMascara) {
   }
 
   function dibujarInfoFormato(mascara) {
-    const bitsNivel = nivel === "L" ? 1 : 0; // L = 01, M = 00
+    const bitsNivel = nivel === "L" ? 1 : 0;
     const data = (bitsNivel << 3) | mascara;
     let rem = data;
     for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
@@ -207,7 +194,7 @@ function matrizQR(texto, nivel, forzarMascara) {
     for (let i = 9; i < 15; i++) ponerModulo(14 - i, 8, bit(i));
     for (let i = 0; i < 8; i++) ponerModulo(tamano - 1 - i, 8, bit(i));
     for (let i = 8; i < 15; i++) ponerModulo(8, tamano - 15 + i, bit(i));
-    ponerModulo(8, tamano - 8, true); // módulo oscuro fijo
+    ponerModulo(8, tamano - 8, true);
   }
 
   function dibujarInfoVersion() {
@@ -224,10 +211,9 @@ function matrizQR(texto, nivel, forzarMascara) {
     }
   }
 
-  // Patrones fijos
   for (let i = 0; i < tamano; i++) {
-    ponerModulo(6, i, i % 2 === 0); // patrón de sincronización vertical
-    ponerModulo(i, 6, i % 2 === 0); // horizontal
+    ponerModulo(6, i, i % 2 === 0);
+    ponerModulo(i, 6, i % 2 === 0);
   }
   dibujarBuscador(3, 3);
   dibujarBuscador(tamano - 4, 3);
@@ -242,10 +228,9 @@ function matrizQR(texto, nivel, forzarMascara) {
       if (!esEsquina) dibujarAlineacion(posiciones[i], posiciones[j]);
     }
   }
-  dibujarInfoFormato(0); // provisorio; se redibuja con la máscara final
+  dibujarInfoFormato(0);
   dibujarInfoVersion();
 
-  // Datos entrelazados, en zigzag evitando módulos de función
   const todos = entrelazar(codewords, version);
   let idxBit = 0;
   const totalBits = todos.length * 8;
@@ -264,7 +249,6 @@ function matrizQR(texto, nivel, forzarMascara) {
     }
   }
 
-  // Máscara: probar las 8 y quedarse con la de menor penalización.
   function aplicarMascara(m) {
     for (let y = 0; y < tamano; y++) {
       for (let x = 0; x < tamano; x++) {
@@ -280,7 +264,7 @@ function matrizQR(texto, nivel, forzarMascara) {
           case 6: condicion = ((x * y) % 2 + (x * y) % 3) % 2 === 0; break;
           default: condicion = (((x + y) % 2) + ((x * y) % 3)) % 2 === 0;
         }
-        modulos[y][x] = modulos[y][x] !== condicion; // XOR
+        modulos[y][x] = modulos[y][x] !== condicion;
       }
     }
   }
@@ -304,10 +288,8 @@ function matrizQR(texto, nivel, forzarMascara) {
       }
       cerrar();
     };
-    // Regla 1: filas y columnas con tramos largos del mismo color
     for (let y = 0; y < tamano; y++) linea((i) => modulos[y][i]);
     for (let x = 0; x < tamano; x++) linea((i) => modulos[i][x]);
-    // Regla 2: bloques 2x2 iguales
     for (let y = 1; y < tamano; y++) {
       for (let x = 1; x < tamano; x++) {
         const c = modulos[y][x];
@@ -316,7 +298,6 @@ function matrizQR(texto, nivel, forzarMascara) {
         }
       }
     }
-    // Regla 3: patrones parecidos a los buscadores
     const patrones = ["00001011101", "10111010000"];
     const buscar = (obtener) => {
       const s = [];
@@ -332,7 +313,6 @@ function matrizQR(texto, nivel, forzarMascara) {
     };
     for (let y = 0; y < tamano; y++) buscar((i) => modulos[y][i]);
     for (let x = 0; x < tamano; x++) buscar((i) => modulos[i][x]);
-    // Regla 4: proporción de módulos oscuros cerca del 50 %
     let oscuros = 0;
     for (const fila of modulos) for (const c of fila) if (c) oscuros++;
     const celdas = tamano * tamano;
@@ -355,7 +335,7 @@ function matrizQR(texto, nivel, forzarMascara) {
         menorPenalizacion = p;
         mejorMascara = m;
       }
-      aplicarMascara(m); // revertir (XOR)
+      aplicarMascara(m);
     }
     aplicarMascara(mejorMascara);
     dibujarInfoFormato(mejorMascara);
@@ -365,7 +345,7 @@ function matrizQR(texto, nivel, forzarMascara) {
 }
 
 function renderConsola(matriz) {
-  const silencio = 4; // margen blanco alrededor
+  const silencio = 4;
   const n = matriz.length + silencio * 2;
   const lineas = [];
   lineas.push("");
@@ -386,8 +366,6 @@ function renderConsola(matriz) {
   return lineas.join("\n");
 }
 
-// Verifica que el servidor esté arriba
-
 function puertoAbierto(puerto) {
   return new Promise((resuelve) => {
     const socket = net.connect(puerto, "127.0.0.1", () => {
@@ -401,8 +379,6 @@ function puertoAbierto(puerto) {
     });
   });
 }
-
-// Principal
 
 async function principal() {
   console.log("======================================================");

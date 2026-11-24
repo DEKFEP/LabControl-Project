@@ -1,19 +1,11 @@
-/* Imports (ES modules) */
 import { AUTH, errorPassword } from "./data.js";
 
-// Si ya hay sesión activa, redirigir al inicio
 if (AUTH.getSesion()) {
   window.location.href = "index";
 }
 
-// Las credenciales (incluidas las de demostración) NO se publican en el
-// cliente: cualquiera puede leer este archivo con "Ver código fuente". El
-// administrador entrega las cuentas de prueba por un canal aparte.
 const $ = (id) => document.getElementById(id);
 
-// ============================================================
-// Cambio de vistas (login / registrar / recuperar)
-// ============================================================
 const vistas = {
   login: $("vista-login"),
   registrar: $("vista-registrar"),
@@ -30,9 +22,6 @@ function cambiarVista(nombre) {
   else if (nombre === "recuperar" && $("restablecer-form").style.display === "none") $("rec-email").focus();
 }
 
-// ============================================================
-// Ingreso con dos pasos (2FA)
-// ============================================================
 const pasoUno = $("paso-1");
 const pasoDos = $("paso-2");
 const errorUno = $("login-error");
@@ -64,7 +53,6 @@ $("login-form").addEventListener("submit", async (e) => {
   btn.disabled = true;
   try {
     if (desafio2FA) {
-      // Segundo paso: validar el código TOTP del desafío pendiente.
       errorDos.style.display = "none";
       btn.textContent = "Verificando…";
       try {
@@ -75,7 +63,6 @@ $("login-form").addEventListener("submit", async (e) => {
         errorDos.style.display = "block";
       }
     } else {
-      // Primer paso: credenciales.
       errorUno.style.display = "none";
       btn.textContent = "Ingresando…";
       try {
@@ -87,8 +74,6 @@ $("login-form").addEventListener("submit", async (e) => {
           window.location.href = "index";
         }
       } catch (err) {
-        // El motivo real del servidor (credenciales incorrectas, cuenta
-        // bloqueada, demasiados intentos) se muestra sin perder lo ya escrito.
         errorUno.textContent = (err && err.message) ? err.message : "No se pudo iniciar sesión. Intenta de nuevo.";
         errorUno.style.display = "block";
         $("input-pass").value = "";
@@ -101,9 +86,6 @@ $("login-form").addEventListener("submit", async (e) => {
   }
 });
 
-// ============================================================
-// Registro autónomo
-// ============================================================
 const registroForm = $("registro-form");
 const registroError = $("registro-error");
 const registroOk = $("registro-ok");
@@ -150,7 +132,6 @@ registroForm.addEventListener("submit", async (e) => {
   btn.textContent = "Registrando…";
   try {
     const respuesta = await AUTH.registro({ id: usuario, nombre, apellido, email, area, especialidad, password: pass });
-    // La cuenta queda pendiente de aprobación: no se inicia sesión automáticamente.
     mostrarBox(registroOk, (respuesta && respuesta.mensaje)
       || "Cuenta creada. Un administrador debe aprobarla antes de que puedas ingresar.");
     registroForm.reset();
@@ -162,9 +143,6 @@ registroForm.addEventListener("submit", async (e) => {
   }
 });
 
-// ============================================================
-// Recuperación de contraseña
-// ============================================================
 const recuperarForm = $("recuperar-form");
 const recuperarError = $("recuperar-error");
 const recuperarOk = $("recuperar-ok");
@@ -208,7 +186,6 @@ recuperarForm.addEventListener("submit", async (e) => {
     const result = await AUTH.solicitarRecuperacion(email);
     recuperarOk.style.display = "block";
     if (result && result.demo) {
-      // En modo demo no se envía correo: se muestra el botón para continuar.
       recuperarDemo.style.display = "block";
     }
   } catch (err) {
@@ -249,7 +226,6 @@ restablecerForm.addEventListener("submit", async (e) => {
   }
 });
 
-// Enlace desde el correo: ?reset=<token> abre directamente el paso final.
 (function () {
   const valor = new URLSearchParams(window.location.search).get("reset");
   if (valor) {
@@ -259,26 +235,17 @@ restablecerForm.addEventListener("submit", async (e) => {
   }
 })();
 
-// ============================================================
-// Call to action: Google
-// ============================================================
 $("btn-google").addEventListener("click", () => {
   const aviso = $("aviso-google");
   aviso.style.display = aviso.style.display === "none" ? "block" : "none";
 });
 
-// ============================================================
-// Navegación entre vistas
-// ============================================================
 $("btn-ir-registrar").addEventListener("click", () => cambiarVista("registrar"));
 $("btn-ir-recuperar").addEventListener("click", () => { salirModoRestablecer(); cambiarVista("recuperar"); });
 $("btn-reg-volver").addEventListener("click", () => cambiarVista("login"));
 $("btn-rec-volver").addEventListener("click", () => { salirModoRestablecer(); cambiarVista("login"); });
 $("btn-rec-otro-volver").addEventListener("click", () => { salirModoRestablecer(); cambiarVista("login"); });
 
-// ============================================================
-// Modal de Términos y Privacidad
-// ============================================================
 const modal = $("modal-terminos");
 const modalTitulo = $("modal-terminos-titulo");
 const modalCuerpo = $("modal-terminos-cuerpo");
