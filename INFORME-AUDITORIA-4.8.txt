@@ -1498,6 +1498,29 @@ Definición de niveles usados en este informe:
  Con las fases 0 a 3 de este informe, el sistema queda en un estado sólido para
  uso institucional y con una base clara para auditorías futuras.
 
+Seguimiento del 24 de noviembre de 2026
+
+- El service worker guardaba el inventario técnico completo, incluidos IP,
+  MAC y serie, además del responsable de cada laboratorio. La copia para
+  consulta sin conexión ahora conserva campos explícitos de inventario. Al
+  activar el nuevo worker se eliminan las cachés anteriores de LabControl.
+- El filtro de credenciales impedía usar el respaldo HTML al navegar sin red.
+  La navegación usa los documentos públicos precargados. La verificación de
+  sesión de las páginas protegidas sigue requiriendo conexión.
+- El proxy de Pages podía tratar x-real-ip como una dirección de confianza.
+  Ahora descarta las cabeceras de IP reenviadas por el cliente y usa la IP
+  que proporciona Cloudflare para identificar al cliente ante el backend.
+- Cambiar el estado de un laboratorio intentaba guardar su identificador en
+  la clave foránea de reportes. SQLite rechazaba el lote de avisos. El aviso
+  conserva el nombre del laboratorio y se entrega sin referencia a un reporte.
+- La comprobación de salud podía aprobar HTML u otro cuerpo con HTTP 200.
+  El despliegue exige JSON con ok igual a true y limita cada intento a 10 s.
+  Se retiró además el bloque de comentario CSS del archivo de reglas _headers.
+- npm audit detectó avisos moderados en el árbol de pruebas. Se actualizó qs
+  y se cambió Jest de la rama 30 a la 29.7. El registro de npm informó
+  cero vulnerabilidades conocidas en los dos árboles revisados. El árbol de
+  desarrollo aún incluye paquetes obsoletos, entre ellos glob 7 e inflight.
+
 ================================================================================
  FIN DEL INFORME
 ================================================================================
