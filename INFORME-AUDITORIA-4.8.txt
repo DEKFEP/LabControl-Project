@@ -6,9 +6,9 @@
                   M-05 a M-14 y B-01 a B-12 (sección 8.4); DUR con backups del
                   volumen como línea base y R2 preparado como copia externa
                   opcional (pendiente).
- Versión actual : 4.9.0 (la auditoría se realizó sobre 4.8; este documento
+ Versión actual : 4.9 (la auditoría se realizó sobre 4.8; este documento
                   conserva su nombre histórico, pero las referencias de código
-                  de la sección 8.4 ya apuntan a 4.9.0).
+                  de la sección 8.4 ya apuntan a 4.9).
  Proyecto       : LabControl — Liceo / Instituto Superior de Comercio
  Ruta analizada : /home/decker/Projects/LabControl/LabControl 4.8
  Alcance        : backend Node/Express + SQLite, PWA frontend, service worker,
@@ -1394,8 +1394,8 @@ Definición de niveles usados en este informe:
    B-08  Endpoint `GET /api/me` y `AUTH.sesionVerificada()`. `renderSidebar()`
          es async y reescribe `lc_sesion` con la respuesta del servidor antes
          de decidir menús y botones; ante fallo no se usa el localStorage.
-   B-09  `/api/salud` reporta `version: "4.9.0"`.
-   B-10  `VERSION = "4.9.0"` en el service worker; `CACHE_NAME` y `API_CACHE` se
+   B-09  `/api/salud` reporta `version: "4.9"`.
+   B-10  `VERSION = "4.9"` en el service worker; `CACHE_NAME` y `API_CACHE` se
          derivan de esa única constante.
    B-11  Actions fijadas por SHA y CLIs de Wrangler/Railway fijadas a versiones
          exactas en los workflows.
@@ -1476,7 +1476,7 @@ Definición de niveles usados en este informe:
  10. CONCLUSIÓN
 --------------------------------------------------------------------------------
 
- LabControl 4.9.0 es un proyecto cuidado, con buenas prácticas de seguridad y
+ LabControl 4.9 es un proyecto cuidado, con buenas prácticas de seguridad y
  una batería de calidad que pasa completa. No requiere una reescritura ni
  presenta fallos críticos confirmados en el código actual.
 

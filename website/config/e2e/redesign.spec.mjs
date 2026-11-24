@@ -158,7 +158,7 @@ test("paleta verde, cabecera de LabControl y superficies verificadas en todas la
   await page.goto("/login");
   const acceso = await page.locator(".login-card").boundingBox();
   expect(Math.abs(acceso.x + acceso.width / 2 - 640)).toBeLessThan(2);
-  await page.screenshot({ path: testInfo.outputPath("4.9.0-login.png"), fullPage: true, animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.9-login.png"), fullPage: true, animations: "disabled" });
   await entrar(page);
   const vistas = [
     ["index", "#labs-home .lab-card", "inicio"],
@@ -180,23 +180,23 @@ test("paleta verde, cabecera de LabControl y superficies verificadas en todas la
       return ["--color-primary", "--color-bg", "--color-surface", "--color-text", "--radius"].map(v => css.getPropertyValue(v).trim().toUpperCase());
     });
     expect(estilo).toEqual(["#059669", "#EAF7F0", "#FFFFFF", "#18251F", "6PX"]);
-    await page.screenshot({ path: testInfo.outputPath(`4.9.0-${nombre}.png`), fullPage: true, animations: "disabled" });
+    await page.screenshot({ path: testInfo.outputPath(`4.9-${nombre}.png`), fullPage: true, animations: "disabled" });
   }
   await page.locator(".user-avatar-btn").click();
-  await page.screenshot({ path: testInfo.outputPath("4.9.0-perfil.png"), animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.9-perfil.png"), animations: "disabled" });
   await page.keyboard.press("Escape");
   await page.evaluate(() => { localStorage.setItem("lc_tema", "oscuro"); });
   await page.goto("/index");
   await expect(page.locator("#labs-home .lab-card")).toHaveCount(5);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "oscuro");
-  await page.screenshot({ path: testInfo.outputPath("4.9.0-oscuro.png"), fullPage: true, animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.9-oscuro.png"), fullPage: true, animations: "disabled" });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: testInfo.outputPath("4.9.0-movil.png"), animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.9-movil.png"), animations: "disabled" });
   await page.locator(".user-avatar-btn").click();
   await expect(page.locator("#panel-perfil")).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("4.9.0-movil-perfil.png"), animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.9-movil-perfil.png"), animations: "disabled" });
   await page.locator(".notif-btn").click();
-  await page.screenshot({ path: testInfo.outputPath("4.9.0-movil-notificaciones.png"), animations: "disabled" });
+  await page.screenshot({ path: testInfo.outputPath("4.9-movil-notificaciones.png"), animations: "disabled" });
   expect(errores).toEqual([]);
 });
 
